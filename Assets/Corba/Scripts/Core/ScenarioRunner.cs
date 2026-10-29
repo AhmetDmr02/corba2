@@ -20,6 +20,14 @@ namespace Corba
             new GameObject("ScenarioRunner").AddComponent<ScenarioRunner>();
         }
 
+        IEnumerator OpenBookLater()
+        {
+            yield return new WaitForSecondsRealtime(4f);
+            SoupBook.Instance?.Toggle();
+            yield return new WaitForSecondsRealtime(3f);
+            SoupBook.Instance?.Toggle();
+        }
+
         IEnumerator Start()
         {
             Directory.CreateDirectory(Path.Combine(Dir, "shots"));
@@ -46,6 +54,11 @@ namespace Corba
                     break;
                 case "aivai":
                     CorbaUI.Instance.SendMessage("OnAiVsAi");
+                    break;
+                case "book":
+                    PlayerPrefs.SetInt("Corba.TutorialDone", 1);
+                    CorbaUI.Instance.SendMessage("OnVsAi");
+                    StartCoroutine(OpenBookLater());
                     break;
                 case "tutorial":
                     PlayerPrefs.DeleteKey("Corba.TutorialDone");

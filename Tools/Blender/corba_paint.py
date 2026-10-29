@@ -341,3 +341,40 @@ def build_glyphs():
     down_head = (yy < 140) & (yy > 20) & (np.abs(xx - cx) < (yy - 20) * 0.85)
     down_shaft = (yy >= 135) & (yy <= 226) & (np.abs(xx - cx) < 34)
     save_rgba(stroke_fill(down_head | down_shaft, "#ffe48a", seed=92), os.path.join(TEX_DIR, "icon_marker.png"))
+
+
+def build_soup_glyphs():
+    """White shape glyphs (tinted in UI): shield, flame, leaf, bubbles, stink lines."""
+    s = 256
+    yy, xx = np.mgrid[0:s, 0:s].astype(float)
+    cx = (s - 1) / 2
+    nx, ny = (xx - cx) / cx, (yy - cx) / cx
+
+    shield = (np.abs(nx) < 0.62) & (ny < 0.7) & (ny > -0.85 + np.abs(nx) * 1.1) | ((np.abs(nx) < 0.62) & (ny >= 0.55) & (ny < 0.78))
+    flame_r = 0.55 * (1 - (ny + 0.7) / 1.7) ** 0.7
+    flame = (ny > -0.75) & (ny < 0.95) & (np.abs(nx + 0.12 * np.sin(ny * 4)) < np.clip(flame_r * (1.6 - np.abs(ny - 0.0)), 0, 0.6))
+    flame &= ~((ny < -0.1) & (ny > -0.55) & (np.abs(nx) < 0.16))
+    leaf = (np.abs(nx) < 0.62 * np.sqrt(np.clip(1 - ny * ny, 0, 1)) * (0.55 + 0.45 * (1 - ny))) & (np.abs(ny) < 0.85)
+    leaf &= ~((np.abs(nx) < 0.04) & (ny > -0.8) & (ny < 0.6))
+    def circ(x, y, r):
+        return (nx - x) ** 2 + (ny - y) ** 2 < r * r
+    bubbles = circ(-0.25, -0.3, 0.42) | circ(0.38, 0.1, 0.3) | circ(-0.05, 0.55, 0.22)
+    bubbles &= ~(circ(-0.25, -0.3, 0.26) | circ(0.38, 0.1, 0.17) | circ(-0.05, 0.55, 0.11))
+    stink = np.zeros_like(nx, dtype=bool)
+    for k, off in enumerate((-0.45, 0.0, 0.45)):
+        stink |= (np.abs(nx - off - 0.14 * np.sin(ny * 5 + k)) < 0.09) & (np.abs(ny) < 0.8)
+
+    for name, mask in (("glyph_shield", shield), ("glyph_flame", flame), ("glyph_leaf", leaf), ("glyph_bubbles", bubbles), ("glyph_stink", stink)):
+        m = mask.astype(float)
+        grow = m.copy()
+        w = 8
+        for dy in range(-w, w + 1, 2):
+            for dx in range(-w, w + 1, 2):
+                if dx * dx + dy * dy <= w * w:
+                    grow = np.maximum(grow, np.roll(np.roll(m, dy, 0), dx, 1))
+        img = np.zeros((s, s, 4))
+        shade = 0.92 + fbm(s, s, 40, 77, 3) * 0.12 + (yy / s - 0.5) * 0.15
+        ink = col("#3b2414")
+        img[:, :, :3] = shade[:, :, None] * m[:, :, None] + ink * (1 - m[:, :, None])
+        img[:, :, 3] = grow
+        save_rgba(np.clip(img, 0, 1), os.path.join(UI_DIR, name + ".png"))

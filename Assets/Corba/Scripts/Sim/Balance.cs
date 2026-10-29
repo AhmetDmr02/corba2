@@ -63,7 +63,9 @@ namespace Corba
 
         public const float PotCapacity = 100f;
         public const float ComebackCapacityBonus = 0.15f;
-        public static float SofraHunger = 120f;
+        public static float SofraHunger = 60f;
+        // Global raider toughness: the tuner's knob for attack versus defence, so the Sofra can stay a readable size.
+        public static float UnitHpScale = 1f;
         public const float CookSpeed = 6.2f;
         public const float SprintMult = 1.45f;
 
@@ -113,7 +115,7 @@ namespace Corba
         public static float CloudAuraRadius = 6f;
         public static float CloudAuraSlow = 0.35f;
         public static float BruteRange = 4f;
-        public static float BruteDps = 30f;
+        public static float BruteDps = 22f;
         public static float BomberSeekRange = 5f;
         public static float BomberDamage = 120f;
         public static float BomberDisableRadius = 4f;
@@ -121,6 +123,10 @@ namespace Corba
         public static float GruntBarricadeDps = 15f;
         public static float BarricadeOtherDps = 10f;
         public static float SourStackMax = 5f;
+        // Control sets up kills: slowed, rooted or feared raiders take extra damage from everything.
+        public static float ControlVulnerability = 0.2f;
+        // Armour, Hearty and rally stack multiplicatively but never past this.
+        public const float MaxDamageReduction = 0.6f;
 
         public static readonly DefenceInfo[] Defences =
         {
@@ -133,7 +139,7 @@ namespace Corba
             new DefenceInfo { Id = DefenceId.Griddle, Soup = SoupType.Ezogelin, Kind = DefenceKind.Trap, Name = "Kızgın Sac", English = "Hot Griddle",
                 Blurb = "Scorches everything standing on it.", Cost = 45, Damage = 60, Radius = 1.6f, Model = "d_griddle" },
             new DefenceInfo { Id = DefenceId.Mint, Soup = SoupType.Yayla, Kind = DefenceKind.Tower, Name = "Nane Esintisi", English = "Mint Breeze",
-                Blurb = "Chilling pulse that slows the area.", Cost = 70, Damage = 10, Interval = 2f, Range = 6, Duration = 2.5f, Magnitude = 0.4f, Hp = TowerHp, Model = "d_mint" },
+                Blurb = "Chilling pulse that slows the area.", Cost = 70, Damage = 22, Interval = 2f, Range = 6, Duration = 2.5f, Magnitude = 0.4f, Hp = TowerHp, Model = "d_mint" },
             new DefenceInfo { Id = DefenceId.Yogurt, Soup = SoupType.Yayla, Kind = DefenceKind.Trap, Name = "Yoğurt Gölü", English = "Yoghurt Puddle",
                 Blurb = "Sticky puddle, heavy slow.", Cost = 40, Radius = 1.6f, Duration = 1f, Magnitude = 0.55f, Model = "d_yogurt" },
             new DefenceInfo { Id = DefenceId.Ferment, Soup = SoupType.Tarhana, Kind = DefenceKind.Tower, Name = "Ekşi Maya Kulesi", English = "Sour Ferment Tower",
@@ -141,7 +147,7 @@ namespace Corba
             new DefenceInfo { Id = DefenceId.Barrel, Soup = SoupType.Tarhana, Kind = DefenceKind.Trap, Name = "Tarhana Fıçısı", English = "Ferment Barrel",
                 Blurb = "Bursts into a poison cloud. Re-arms.", Cost = 55, Damage = 25, Interval = 15, Range = 2, Radius = 4, Duration = 6, Model = "d_barrel" },
             new DefenceInfo { Id = DefenceId.Garlic, Soup = SoupType.Iskembe, Kind = DefenceKind.Tower, Name = "Sarımsak Kulesi", English = "Garlic Tower",
-                Blurb = "Stench pulse that drives units back.", Cost = 90, Damage = 15, Interval = 4, Range = 5, Magnitude = 4, Hp = TowerHp, Model = "d_garlic" },
+                Blurb = "Stench pulse that drives units back.", Cost = 90, Damage = 30, Interval = 4, Range = 5, Magnitude = 4, Hp = TowerHp, Model = "d_garlic" },
             new DefenceInfo { Id = DefenceId.Snare, Soup = SoupType.Iskembe, Kind = DefenceKind.Trap, Name = "Sirke Kapanı", English = "Vinegar Snare",
                 Blurb = "Roots up to 3 units. Re-arms.", Cost = 50, Damage = 40, Interval = 8, Radius = 1.6f, Duration = 2.5f, Magnitude = 3, Model = "d_snare" },
         };
@@ -164,8 +170,8 @@ namespace Corba
                 Cost = 30, Hp = 100, Speed = 4.0f, Bite = 2, Model = "u_saboteur", Scale = 0.95f },
             new UnitInfo { Id = UnitId.Cloud, Soup = SoupType.Tarhana, Name = "Ekşi Bulut", English = "Sour Cloud", Blurb = "Slows nearby towers.",
                 Cost = 40, Hp = 130, Speed = 3.1f, Bite = 2, Model = "u_cloud", Scale = 1f },
-            new UnitInfo { Id = UnitId.Brute, Soup = SoupType.Iskembe, Name = "Sarımsak Devi", English = "Garlic Brute", Blurb = "Huge. Smashes towers.",
-                Cost = 60, Hp = 520, Speed = 2.4f, Bite = 6, Model = "u_brute", Scale = 1.35f },
+            new UnitInfo { Id = UnitId.Brute, Soup = SoupType.Iskembe, Name = "Sarımsak Devi", English = "Garlic Brute", Blurb = "Huge, fearless. Smashes towers.",
+                Cost = 60, Hp = 380, Speed = 2.4f, Bite = 6, Model = "u_brute", Scale = 1.35f },
             new UnitInfo { Id = UnitId.Bomber, Soup = SoupType.Iskembe, Name = "Sirke Bombacısı", English = "Vinegar Bomber", Blurb = "Blows up a tower.",
                 Cost = 35, Hp = 120, Speed = 4.2f, Bite = 3, Model = "u_bomber", Scale = 1f },
             new UnitInfo { Id = UnitId.MiniGolem, Soup = SoupType.Yayla, Name = "Minik Golem", English = "Mini Golem", Blurb = "",
@@ -189,6 +195,7 @@ namespace Corba
 
         public static DefenceInfo Defence(DefenceId id) => Defences[(int)id];
         public static UnitInfo Unit(UnitId id) => Units[(int)id];
+        public static float UnitMaxHp(UnitId id) => Units[(int)id].Hp * UnitHpScale;
         public static DefenceId DefenceOption(SoupType soup, int option) => (DefenceId)((int)soup * 2 + option);
         public static UnitId UnitOption(SoupType soup, int option) => (UnitId)((int)soup * 2 + option);
 

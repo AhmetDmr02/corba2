@@ -25,6 +25,8 @@ namespace Corba
 
         // HUD
         RectTransform versus, objectiveCard, sofraCard, potCard, abilityCard, promptPill, recruitBar, buildBar, announcer;
+        Text potRole;
+        Image potGlyph;
         Text timerText, phaseText, courseText, hostScore, guestScore, hostName, guestName, objectiveRole, objectiveText, sofraText, potName, potAmount, spillText, promptText, announcerText, queueText, shoveKey;
         Image phaseRibbon, objectiveChip, sofraFill, potFill, sloshDot, shoveFill, edgeArrow;
         readonly Image[] hostStars = new Image[2], guestStars = new Image[2];
@@ -88,6 +90,7 @@ namespace Corba
             hudRoot.gameObject.SetActive(false);
             resultRoot.gameObject.SetActive(false);
             cgo.AddComponent<Tutorial>();
+            cgo.AddComponent<SoupBook>();
         }
 
         #region Menu
@@ -185,18 +188,21 @@ namespace Corba
             sofraFill.type = UnityEngine.UI.Image.Type.Filled;
             sofraFill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
 
-            potCard = Rect("Pot", hudRoot, new Vector2(0f, 0f), new Vector2(18, 18), new Vector2(360, 196), new Vector2(0f, 0f));
+            potCard = Rect("Pot", hudRoot, new Vector2(0f, 0f), new Vector2(18, 18), new Vector2(420, 250), new Vector2(0f, 0f));
             Image(potCard, "ui_panel_dark", Color.white);
-            var bowl = Panel(potCard, "ui_bowl_back", new Vector2(0f, 0.5f), new Vector2(92, 0), new Vector2(150, 150)).rectTransform;
+            var bowl = Panel(potCard, "ui_bowl_back", new Vector2(0f, 0.5f), new Vector2(92, 26), new Vector2(150, 150)).rectTransform;
             potFill = Panel(bowl, "ui_soup_circle", new Vector2(0.5f, 0.5f), new Vector2(0, -4), new Vector2(112, 112));
             potFill.type = UnityEngine.UI.Image.Type.Filled;
             potFill.fillMethod = UnityEngine.UI.Image.FillMethod.Vertical;
             potFill.preserveAspect = false;
             Panel(bowl, "ui_bowl_rim", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(146, 146));
             sloshDot = Panel(bowl, "ui_badge", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26, 26));
-            potName = Text(potCard, "", 26, Gold, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(262, -40), new Vector2(170, 36), true);
-            potAmount = Text(potCard, "", 40, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 0.5f), new Vector2(262, 0), new Vector2(170, 50), true);
-            spillText = Text(potCard, "", 16, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 0f), new Vector2(262, 38), new Vector2(170, 44));
+            potGlyph = Panel(potCard, "glyph_shield", new Vector2(0f, 1f), new Vector2(196, -42), new Vector2(40, 40));
+            potName = Text(potCard, "", 26, Gold, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(312, -42), new Vector2(180, 36), true);
+            potAmount = Text(potCard, "", 40, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(282, -92), new Vector2(220, 50), true);
+            spillText = Text(potCard, "", 16, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(282, -140), new Vector2(220, 40));
+            potRole = Text(potCard, "", 17, Cream, TextAnchor.MiddleLeft, new Vector2(0.5f, 0f), new Vector2(0, 32), new Vector2(380, 44));
+            Button(hudRoot, "Soup Book [B]", new Vector2(0f, 1f), new Vector2(150, -196), new Vector2(240, 52), () => SoupBook.Instance?.Toggle(), 20);
 
             abilityCard = Rect("Abilities", hudRoot, new Vector2(1f, 0f), new Vector2(-18, 18), new Vector2(150, 196), new Vector2(1f, 0f));
             Image(abilityCard, "ui_panel_dark", Color.white);
@@ -632,6 +638,16 @@ namespace Corba
             potFill.fillAmount = shownFill / cap;
             potFill.color = has ? GameData.Soup((SoupType)me.Soup.Value).Liquid : Color.clear;
             potName.text = has ? GameData.Soup((SoupType)me.Soup.Value).Name : "Empty pot";
+            potGlyph.gameObject.SetActive(has);
+            potRole.text = has ? RoleLine(d, (SoupType)me.Soup.Value, d.IsDefender(mySlot)) : "Fill your pot at a cauldron. <b>[B]</b> Soup Book";
+            if (has)
+            {
+                var info = GameData.Soup((SoupType)me.Soup.Value);
+                potGlyph.sprite = Art.Sprite(info.Glyph);
+                potGlyph.color = info.Identity;
+                potName.color = Color.Lerp(info.Identity, Color.white, 0.35f);
+            }
+            else potName.color = Gold;
             potAmount.text = has ? $"{Mathf.RoundToInt(shownFill)}<size=22>/{cap:0}</size>" : "-";
             float spilled = mySlot == 0 ? d.SpillA.Value : d.SpillB.Value;
             spillText.text = $"Spilled: {Mathf.RoundToInt(spilled)}" + ((d.BonusMask.Value & (1 << mySlot)) != 0 ? "\n<color=#F2B33D>Annenin Eli +15%</color>" : "");
@@ -640,6 +656,26 @@ namespace Corba
             sloshDot.color = s.magnitude > GameData.SloshRim ? GameData.Hex("D9442B") : s.magnitude > 0.7f ? GameData.Hex("F2B33D") : GameData.Hex("8FD19E");
             potFill.rectTransform.localRotation = Quaternion.Euler(0, 0, -s.x * 25f);
             shoveFill.fillAmount = me.ShoveCooldown01;
+        }
+
+        static string RoleLine(MatchDirector d, SoupType soup, bool defender)
+        {
+            var info = GameData.Soup(soup);
+            string kw = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(info.Identity, Color.white, 0.3f))}><b>{info.Keyword}</b></color>";
+            if (defender)
+            {
+                var a = GameData.Defence(GameData.DefenceOption(soup, 0));
+                var b = GameData.Defence(GameData.DefenceOption(soup, 1));
+                return $"{kw} \u2022 builds {a.English} or {b.English}";
+            }
+            if (d.Phase.Value == MatchPhase.Raid)
+            {
+                var l = Balance.Ladles[(int)soup];
+                return $"{kw} \u2022 bank it, or throw [R]: {l.Name}, {l.Blurb.ToLowerInvariant()}";
+            }
+            var u = GameData.Unit(GameData.UnitOption(soup, 0));
+            var v = GameData.Unit(GameData.UnitOption(soup, 1));
+            return $"{kw} \u2022 bank it for {u.English} or {v.English}";
         }
 
         void UpdateBuildBar(ChefController me)

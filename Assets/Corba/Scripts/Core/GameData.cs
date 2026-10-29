@@ -8,6 +8,12 @@ namespace Corba
     {
         public string Name;
         public string English;
+        /// <summary>One-word role shown everywhere the soup appears.</summary>
+        public string Keyword;
+        /// <summary>UI sprite with the soup's shape glyph, so soups read without relying on colour alone.</summary>
+        public string Glyph;
+        public string Carry;
+        public string Theme;
         public Color Identity;
         public Color Liquid;
         public float SpillMult;
@@ -53,11 +59,21 @@ namespace Corba
 
         public static readonly SoupInfo[] Soups =
         {
-            new SoupInfo { Name = "Mercimek", English = "Red Lentil", Identity = Hex("F2B33D"), Liquid = Hex("E8962E") },
-            new SoupInfo { Name = "Ezogelin", English = "Spicy Bulgur", Identity = Hex("D9442B"), Liquid = Hex("C9502B") },
-            new SoupInfo { Name = "Yayla", English = "Yoghurt Mint", Identity = Hex("7CC98E"), Liquid = Hex("EFE9D2") },
-            new SoupInfo { Name = "Tarhana", English = "Fermented", Identity = Hex("C77A35"), Liquid = Hex("B5562F") },
-            new SoupInfo { Name = "İşkembe", English = "Garlic Tripe", Identity = Hex("A88FC9"), Liquid = Hex("E6DCC4") },
+            new SoupInfo { Name = "Mercimek", English = "Red Lentil", Keyword = "Sturdy", Glyph = "glyph_shield",
+                Carry = "Thick: hard to spill, a little slow.", Theme = "Tough walls and armoured raiders.",
+                Identity = Hex("F5B92E"), Liquid = Hex("F0A92A") },
+            new SoupInfo { Name = "Ezogelin", English = "Spicy Bulgur", Keyword = "Spicy", Glyph = "glyph_flame",
+                Carry = "Normal soup, no quirks.", Theme = "Burning damage and fast raiders.",
+                Identity = Hex("E8412C"), Liquid = Hex("D0331C") },
+            new SoupInfo { Name = "Yayla", English = "Yoghurt Mint", Keyword = "Cooling", Glyph = "glyph_leaf",
+                Carry = "Thin: spills easily, but you move faster.", Theme = "Slows on defence, healing on attack.",
+                Identity = Hex("47C46B"), Liquid = Hex("B8EDB4") },
+            new SoupInfo { Name = "Tarhana", English = "Fermented", Keyword = "Sour", Glyph = "glyph_bubbles",
+                Carry = "Thick and forgiving.", Theme = "Weakens enemies: sour stacks, poison, tower slow.",
+                Identity = Hex("9A57D6"), Liquid = Hex("8B47C4") },
+            new SoupInfo { Name = "İşkembe", English = "Garlic Tripe", Keyword = "Pungent", Glyph = "glyph_stink",
+                Carry = "Stinks: rival cooks near you move slower.", Theme = "Disruption: fear, roots, stuns, demolition.",
+                Identity = Hex("38A3DB"), Liquid = Hex("7FC4EA") },
         };
 
         static GameData()

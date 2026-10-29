@@ -150,9 +150,7 @@ namespace Corba.Sim
 
         public SimUnit SpawnUnit(UnitId kind, float dist, float lateral)
         {
-            var u = new SimUnit { Id = nextId++, Kind = kind, Info = Balance.Unit(kind), Dist = dist, Lateral = lateral };
-            u.Hp = u.Info.Hp;
-            u.Pos = Road.Sample(dist, lateral);
+            var u = MakeUnit(kind, dist, lateral);
             Units.Add(u);
             return u;
         }
@@ -205,7 +203,9 @@ namespace Corba.Sim
             float reduction = u.Info.Armor;
             if (Time < u.FortifyUntil) reduction = 1f - (1f - reduction) * (1f - Balance.Ladles[(int)SoupType.Mercimek].Magnitude);
             if (u.Rallied) reduction = 1f - (1f - reduction) * (1f - Balance.RallyArmor);
-            amount *= (1f + sour) * (1f - reduction);
+            reduction = Math.Min(reduction, Balance.MaxDamageReduction);
+            bool controlled = Time < u.SlowUntil && !u.SlowImmune || Time < u.RootUntil || u.FearRemaining > 0f;
+            amount *= (1f + sour) * (1f - reduction) * (controlled ? 1f + Balance.ControlVulnerability : 1f);
             amount = Math.Min(amount, u.Hp);
             u.Hp -= amount;
             u.DamageTaken += amount;
@@ -233,8 +233,10 @@ namespace Corba.Sim
 
         SimUnit MakeUnit(UnitId kind, float dist, float lateral)
         {
-            var u = new SimUnit { Id = nextId++, Kind = kind, Info = Balance.Unit(kind), Dist = dist, Lateral = lateral };
-            u.Hp = u.Info.Hp;
+            var info = Balance.Unit(kind);
+            info.Hp = Balance.UnitMaxHp(kind);
+            var u = new SimUnit { Id = nextId++, Kind = kind, Info = info, Dist = dist, Lateral = lateral };
+            u.Hp = info.Hp;
             u.Pos = Road.Sample(dist, lateral);
             return u;
         }
@@ -254,7 +256,7 @@ namespace Corba.Sim
 
         void Root(SimUnit u, float duration)
         {
-            if (u.FearImmune(Time)) return;
+            if (Time < u.ImmuneUntil) return;
             u.RootUntil = Math.Max(u.RootUntil, Time + duration);
         }
 
@@ -604,7 +606,7 @@ namespace Corba.Sim
                     int caught = 0;
                     foreach (var u in Units)
                     {
-                        if (!u.Alive || u.TrapImmune || u.FearImmune(Time) || Math.Abs(u.Dist - center) > half) continue;
+                        if (!u.Alive || u.TrapImmune || Time < u.ImmuneUntil || Math.Abs(u.Dist - center) > half) continue;
                         Root(u, info.Duration);
                         Damage(u, info.Damage * mult, b, true);
                         if (++caught >= (int)info.Magnitude) break;

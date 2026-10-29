@@ -21,10 +21,11 @@ namespace Corba
         List<Vector3> path = new List<Vector3>();
         int pathIndex;
         Vector3 pathTarget;
-        float repathTimer, progressTimer, recruitTimer, thinkTimer, actCooldown, waveTimer;
+        float repathTimer, progressTimer, recruitTimer, actCooldown, waveTimer;
         Vector3 progressPos;
         int stuckCount;
         int roleKey = -1;
+        MatchPhase plannedPhase;
         readonly Dictionary<Vector3, float> unreachableUntil = new Dictionary<Vector3, float>();
         readonly System.Random rng = new System.Random();
 
@@ -66,7 +67,6 @@ namespace Corba
                 unreachableUntil.Clear();
             }
             actCooldown -= dt;
-            thinkTimer -= dt;
             Map.Nav.DecayPenalties(dt);
 
             if (!Defending)
@@ -80,11 +80,12 @@ namespace Corba
                 input.SendWave = ShouldSendWave(dt);
             }
 
-            if (task == Task.None || thinkTimer <= 0f)
-            {
-                thinkTimer = Defending ? 2.5f : 1.2f;
-                if (task == Task.None || (task == Task.Fill && !Defending)) Plan();
-            }
+            // Commit to a decision until it is carried out. Re-planning mid-walk with a fresh random pick
+            // made bots swerve between cauldrons. Only a phase change (prep -> raid) re-opens an attacker's fill choice.
+            var phase = D.Phase.Value;
+            bool phaseChanged = phase != plannedPhase;
+            plannedPhase = phase;
+            if (task == Task.None || (phaseChanged && task == Task.Fill && !Defending)) Plan();
             if (task == Task.Support && !HasSoup) task = Task.None;
             if (task == Task.None) return input;
 
@@ -118,7 +119,6 @@ namespace Corba
             afterFillWasSupport = false;
             path.Clear();
             stuckCount = 0;
-            thinkTimer = 0f;
         }
 
         bool Reachable(Vector3 target) => !unreachableUntil.TryGetValue(target, out var until) || Time.time >= until;
@@ -334,7 +334,7 @@ namespace Corba
             value *= Counter(id);
 
             float travel = CorbaMap.FlatDist(Map.CellCenter(Map.KitchenCell), pad.TowerPosition);
-            return value / D.BuildCost(id) * 100f - travel * 0.04f + (float)rng.NextDouble() * 0.15f;
+            return value / D.BuildCost(id) * 100f - travel * 0.04f;
         }
 
         float Counter(DefenceId id)

@@ -1,2 +1,11 @@
-15:14:03 CMD refresh
-15:14:04 COMPILATION FINISHED
+15:41:04 CMD refresh
+15:41:05 COMPILATION FINISHED
+15:42:17 PLAYMODE ExitingEditMode
+15:42:20 PLAYMODE EnteredPlayMode
+15:44:41 [Corba] half end: course 1 half 1 attacker 1 score 4 sofraFell False builds 7 raiders 10 ladles 8
+15:46:34 PLAYMODE ExitingPlayMode
+15:46:34 PLAYMODE EnteredEditMode
+15:46:35 PLAYMODE ExitingEditMode
+15:46:38 PLAYMODE EnteredPlayMode
+15:47:04 PLAYMODE ExitingPlayMode
+15:47:05 PLAYMODE EnteredEditMode

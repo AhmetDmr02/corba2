@@ -105,7 +105,7 @@ namespace Corba
 
     public class WorldLabel : MonoBehaviour
     {
-        public static WorldLabel Create(Transform parent, Vector3 pos, string title, string subtitle, Color color)
+        public static WorldLabel Create(Transform parent, Vector3 pos, string title, string subtitle, Color color, string glyph = null, float fadeRange = 0f)
         {
             var go = new GameObject("Label_" + title);
             go.transform.SetParent(parent, false);
@@ -127,9 +127,27 @@ namespace Corba
             img.type = Image.Type.Sliced;
             img.color = color;
 
-            AddText(go.transform, title, 50, new Vector2(0, 16), new Color(1f, 0.97f, 0.88f), CorbaUI.TitleFont);
-            AddText(go.transform, subtitle, 24, new Vector2(0, -34), new Color(1f, 0.93f, 0.8f), CorbaUI.BodyFont);
-            return go.AddComponent<WorldLabel>();
+            float textX = 0f;
+            if (!string.IsNullOrEmpty(glyph))
+            {
+                var icon = new GameObject("Glyph", typeof(RectTransform));
+                icon.transform.SetParent(go.transform, false);
+                var irt = (RectTransform)icon.transform;
+                irt.sizeDelta = new Vector2(86, 86);
+                irt.anchoredPosition = new Vector2(-122, 0);
+                var iimg = icon.AddComponent<Image>();
+                iimg.sprite = Art.Sprite(glyph);
+                iimg.preserveAspect = true;
+                iimg.color = new Color(1f, 0.97f, 0.88f);
+                textX = 40f;
+            }
+            AddText(go.transform, title, 50, new Vector2(textX, 16), new Color(1f, 0.97f, 0.88f), CorbaUI.TitleFont);
+            AddText(go.transform, subtitle, 24, new Vector2(textX, -34), new Color(1f, 0.93f, 0.8f), CorbaUI.BodyFont);
+            var label = go.AddComponent<WorldLabel>();
+            label.fadeRange = fadeRange;
+            label.group = go.AddComponent<CanvasGroup>();
+            if (fadeRange > 0f) label.group.alpha = 0f;
+            return label;
         }
 
         static void AddText(Transform parent, string s, int size, Vector2 pos, Color c, Font font)
@@ -154,12 +172,21 @@ namespace Corba
         }
 
         float t;
+        float fadeRange;
+        CanvasGroup group;
 
         void LateUpdate()
         {
             var cam = Camera.main;
             if (cam == null) return;
             t += Time.deltaTime;
+            if (fadeRange > 0f)
+            {
+                var me = ChefController.Local;
+                float target = me != null && CorbaMap.FlatDist(me.transform.position, transform.position) < fadeRange ? 1f : 0f;
+                group.alpha = Mathf.MoveTowards(group.alpha, target, Time.deltaTime * 4f);
+                if (group.alpha <= 0.001f) return;
+            }
             transform.rotation = cam.transform.rotation;
             float dist = Vector3.Distance(cam.transform.position, transform.position);
             transform.localScale = Vector3.one * Mathf.Clamp(dist * 0.0006f, 0.008f, 0.03f) * (1f + Mathf.Sin(t * 2f) * 0.02f);

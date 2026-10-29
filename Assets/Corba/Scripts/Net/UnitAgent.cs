@@ -27,6 +27,8 @@ namespace Corba
         CharacterAnimator animator;
         float bobPhase, attackAnimTimer;
         bool reachedEnd;
+        float damageTally, damageTimer, dustTimer;
+        Color shownTint = Color.clear;
 
         public override void OnNetworkSpawn()
         {
@@ -38,6 +40,8 @@ namespace Corba
             animator = CharacterAnimator.Attach(visual.gameObject);
             animator.SetBase("Walk", info.Speed / 3.6f);
             visual.Pop(0.1f, 0.5f);
+            FX.Dust(transform.position);
+            FX.Dust(transform.position);
             bar = HealthBar.Create(transform, 1.6f * info.Scale + 0.4f, 0.9f);
             bobPhase = Random.value * 10f;
             lastHp = Hp.Value;
@@ -50,8 +54,11 @@ namespace Corba
             All.Remove(this);
             if (CorbaMap.Instance != null && Distance.Value < CorbaMap.Instance.RoadLength - 0.5f && !reachedEnd)
             {
-                FX.Splash(transform.position + Vector3.up * 0.6f, GameData.Soup(Info.Soup).Liquid, 10);
+                var c = GameData.Soup(Info.Soup).Liquid;
+                FX.Splash(transform.position + Vector3.up * 0.6f, c, 16);
                 FX.Puff(transform.position + Vector3.up * 0.5f, GameData.Hex("F4ECD8"));
+                FX.Splat(transform.position, c, 1.4f * Info.Scale);
+                FX.PopText(transform.position + Vector3.up * 2f, "poof!", GameData.Hex("FFF4DC"), 0.8f);
             }
         }
 
@@ -67,6 +74,18 @@ namespace Corba
                 if (Flags.Value != Sim.Status) Flags.Value = Sim.Status;
             }
             ClientVisual(Time.deltaTime);
+        }
+
+        void UpdateBuffTint(UnitStatus f)
+        {
+            Color want = Color.clear;
+            if ((f & UnitStatus.Fortified) != 0) want = GameData.Soup(SoupType.Mercimek).Identity;
+            else if ((f & UnitStatus.Hasted) != 0) want = GameData.Soup(SoupType.Ezogelin).Identity;
+            else if ((f & UnitStatus.Immune) != 0) want = GameData.Soup(SoupType.Iskembe).Identity;
+            if (want == shownTint) return;
+            shownTint = want;
+            Art.Tint(visual.gameObject, want == Color.clear ? Color.white : want, want == Color.clear ? 0f : 0.35f);
+            if (want != Color.clear) Tween.Punch(visual, 0.2f, 0.3f);
         }
 
         void ClientVisual(float dt)
@@ -106,18 +125,36 @@ namespace Corba
 
             if (Hp.Value < lastHp - 0.5f)
             {
+                damageTally += lastHp - Hp.Value;
                 if (hitFlash < 0.3f)
                 {
                     animator.Trigger("Hit", 1.5f);
-                    Tween.Squash(visual, 0.15f, 0.25f);
+                    Tween.Squash(visual, 0.18f, 0.25f);
+                    Tween.LocalMove(visual, new Vector3(0, visual.localPosition.y, -0.18f), 0.06f, Ease.OutQuad)
+                        .OnDone(() => { if (visual) Tween.LocalMove(visual, new Vector3(0, visual.localPosition.y, 0f), 0.2f, Ease.OutBack); });
                 }
                 hitFlash = 1f;
             }
+            damageTimer -= dt;
+            if (damageTimer <= 0f && damageTally >= 6f)
+            {
+                FX.PopText(transform.position + Vector3.up * (1.8f * Info.Scale + 0.3f) + Random.insideUnitSphere * 0.3f,
+                    Mathf.RoundToInt(damageTally).ToString(), damageTally >= 40f ? GameData.Hex("FF9A6A") : GameData.Hex("FFE7C2"), damageTally >= 40f ? 1.1f : 0.75f);
+                damageTally = 0f;
+                damageTimer = 0.35f;
+            }
+            dustTimer -= dt;
+            if (dustTimer <= 0f && !flying && (f & UnitStatus.Rooted) == 0)
+            {
+                dustTimer = Random.Range(0.35f, 0.7f);
+                FX.Dust(transform.position);
+            }
+            UpdateBuffTint(f);
             if (Hp.Value > lastHp + 20f) FX.Sparkle(transform.position + Vector3.up * 1.2f, GameData.Hex("BFF2D0"));
             lastHp = Hp.Value;
             hitFlash = Mathf.MoveTowards(hitFlash, 0f, dt * 6f);
             Art.SetFloat(renderers, "_Flash", hitFlash * 0.7f);
-            bar.Set(Hp.Value / Info.Hp, GameData.Soup(Info.Soup).Identity);
+            bar.Set(Hp.Value / Balance.UnitMaxHp(Kind.Value), GameData.Soup(Info.Soup).Identity);
 
             Vector3 p = transform.position;
             if ((f & UnitStatus.Burning) != 0 && Random.value < dt * 12f) FX.Ember(p + Vector3.up * 1f);

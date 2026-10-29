@@ -364,7 +364,7 @@ namespace Corba
         {
             if (Phase.Value != MatchPhase.Raid || IsDefender(slot) || waveQueue.Count == 0) return false;
             foreach (var u in waveQueue) spawnQueue.Enqueue(u);
-            SendToast($"Wave of {waveQueue.Count} marching!", GameData.Hex("FFB040"));
+            WaveFxRpc(waveQueue.Count);
             waveQueue.Clear();
             Queued.Value = 0;
             Marching.Value = spawnQueue.Count;
@@ -688,6 +688,7 @@ namespace Corba
         void ShotFxRpc(ulong buildObject, Vector3 from, Vector3 to, Color color, float flight, bool lob)
         {
             FX.Projectile(from, to, color, flight, lob);
+            FX.Puff(from, new Color(1f, 0.95f, 0.85f, 0.7f));
             if (NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(buildObject, out var obj) && obj.TryGetComponent<DefenceBuild>(out var b)) b.Recoil();
         }
 
@@ -700,13 +701,35 @@ namespace Corba
         [Rpc(SendTo.ClientsAndHost)]
         void LadleFxRpc(Vector3 from, Vector3 to, SoupType soup)
         {
-            FX.Projectile(from, to, GameData.Soup(soup).Liquid, 0.45f, true);
-            Tween.Wait(0.45f, () => FX.Splash(to + Vector3.up * 0.3f, GameData.Soup(soup).Liquid, 18));
+            var info = GameData.Soup(soup);
+            FX.Projectile(from, to, info.Liquid, 0.45f, true);
+            Tween.Wait(0.45f, () =>
+            {
+                FX.Splash(to + Vector3.up * 0.3f, info.Liquid, 24);
+                FX.Ring(to + Vector3.up * 0.3f, info.Identity, Balance.LadleRadius);
+                for (int i = 0; i < 5; i++) FX.Splat(to + Random.insideUnitSphere * Balance.LadleRadius * 0.6f, info.Liquid, Random.Range(0.8f, 1.6f));
+                FX.PopText(to + Vector3.up * 2.2f, Balance.Ladles[(int)soup].Name + "!", Color.Lerp(info.Identity, Color.white, 0.4f), 1.1f);
+                CameraRig.Instance?.Shake(0.25f);
+            });
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void WaveFxRpc(int count)
+        {
+            CorbaUI.Instance?.Announce($"WAVE \u00d7{count}!", GameData.Hex("FFB040"));
+            var map = CorbaMap.Instance;
+            if (map == null) return;
+            FX.Ring(map.Ocak.Position + Vector3.up * 0.5f, GameData.Hex("FFB040"), 5f);
+            if (map.OcakObject != null) Tween.Squash(map.OcakObject, 0.25f, 0.5f);
         }
 
         [Rpc(SendTo.ClientsAndHost)]
         void BiteFxRpc(Vector3 pos, int amount)
         {
+            FX.PopText(pos + Vector3.up * 1.6f, "NOM!", GameData.Hex("FFD86A"), 1.6f);
+            CameraRig.Instance?.Shake(0.35f);
+            var map = CorbaMap.Instance;
+            if (map != null && map.SofraObject != null) Tween.Squash(map.SofraObject, 0.2f, 0.4f);
             FX.Splash(pos, GameData.Hex("E8962E"), 6);
             FX.FloatText(pos + Vector3.up, "-" + amount, GameData.Hex("D9442B"));
         }

@@ -81,6 +81,9 @@ namespace Corba.Tools
                     Console.WriteLine($"{Balance.Defences[def].English}: score {s0 / n:0.00} -> {s1 / n:0.00}  unitsSent {k0 / n:0.0} -> {k1 / n:0.0}  atkDelivered {d0 / n:0} -> {d1 / n:0}");
                     return 0;
                 }
+                case "audit":
+                    new Audit(maps, Arg("--seed", 99)).Run(Path.Combine(root, "Docs", "Balance_Audit.md"));
+                    return 0;
                 case "tune":
                 {
                     int iterations = Arg("--iters", 10);

@@ -142,6 +142,28 @@ namespace Corba
                 Emit("fx_splat", hit.point + Vector3.up * 0.08f, Vector3.zero, 0f, 6f, Random.Range(0.4f, 0.7f), 0.5f, new Color(c.r, c.g, c.b, 0.85f), true);
         }
 
+        public static void Mote(Vector3 pos)
+        {
+            var c = new Color(1f, 0.93f, 0.7f, 0.55f);
+            Emit("fx_blob", pos, new Vector3(Random.Range(-0.3f, 0.3f), Random.Range(0.05f, 0.25f), Random.Range(-0.3f, 0.3f)), -0.02f, Random.Range(4f, 7f), 0.09f, 0.05f, c);
+        }
+
+        public static void Splat(Vector3 pos, Color c, float size)
+        {
+            if (Physics.Raycast(pos + Vector3.up * 2f, Vector3.down, out var hit, 6f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                Emit("fx_splat", hit.point + Vector3.up * 0.07f, Vector3.zero, 0f, 7f, size * 0.6f, size, new Color(c.r, c.g, c.b, 0.9f), true);
+        }
+
+        public static void Dust(Vector3 pos)
+        {
+            Emit("fx_puff", pos + Random.insideUnitSphere * 0.2f, new Vector3(Random.Range(-0.4f, 0.4f), 0.5f, Random.Range(-0.4f, 0.4f)), 0f, 0.6f, 0.25f, 0.7f, new Color(0.85f, 0.76f, 0.6f, 0.6f));
+        }
+
+        public static void PopText(Vector3 pos, string text, Color c, float size)
+        {
+            FloatText(pos, text, c, size);
+        }
+
         public static void Bubble(Vector3 pos, Color c)
         {
             Emit("fx_bubble", pos, Vector3.up * 0.15f, 0f, Random.Range(0.4f, 0.8f), 0.05f, Random.Range(0.25f, 0.45f), c);
@@ -198,7 +220,9 @@ namespace Corba
             fx.shots.Add(new Shot { From = from, To = to, Flight = Mathf.Max(flight, 0.05f), Lob = lob, Color = c, Ball = ball });
         }
 
-        public static void FloatText(Vector3 pos, string text, Color c)
+        public static void FloatText(Vector3 pos, string text, Color c) => FloatText(pos, text, c, 1f);
+
+        public static void FloatText(Vector3 pos, string text, Color c, float size)
         {
             var fx = Instance;
             var go = new GameObject("float");
@@ -207,12 +231,13 @@ namespace Corba
             tm.font = fx.font;
             tm.text = text;
             tm.fontSize = 64;
-            tm.characterSize = 0.06f;
+            tm.characterSize = 0.06f * size;
             tm.anchor = TextAnchor.MiddleCenter;
             tm.color = c;
             tm.fontStyle = FontStyle.Bold;
             go.GetComponent<MeshRenderer>().sharedMaterial = fx.font.material;
             go.AddComponent<FloatTextMover>();
+            go.transform.Pop(0.2f, 0.35f);
         }
 
         void Update()

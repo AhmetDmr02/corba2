@@ -114,6 +114,74 @@ namespace Corba.Tools
 
         #endregion
 
+        public (List<AttackerPolicy>, List<DefenderPolicy>) Elites(int k) => (attackers.Take(k).ToList(), defenders.Take(k).ToList());
+
+        double AttackerScore(AttackerPolicy a, IList<DefenderPolicy> pool, int games, int salt)
+        {
+            double sum = 0;
+            object gate = new object();
+            Parallel.For(0, games, g =>
+            {
+                var r = new Random(Mix(seed, salt * 7919 + g));
+                double f = HalfSim.Play(maps[r.Next(maps.Count)], pool[r.Next(pool.Count)], a, r.Next(), Bonus.None).Fraction;
+                lock (gate) sum += f;
+            });
+            Interlocked.Add(ref simsRun, games);
+            return sum / games;
+        }
+
+        double DefenderScore(DefenderPolicy d, IList<AttackerPolicy> pool, int games, int salt)
+        {
+            double sum = 0;
+            object gate = new object();
+            Parallel.For(0, games, g =>
+            {
+                var r = new Random(Mix(seed, salt * 7919 + g + 500000));
+                double f = HalfSim.Play(maps[r.Next(maps.Count)], d, pool[r.Next(pool.Count)], r.Next(), Bonus.None).Fraction;
+                lock (gate) sum += f;
+            });
+            Interlocked.Add(ref simsRun, games);
+            return sum / games;
+        }
+
+        /// <summary>
+        /// Double oracle step: hill-climb the strongest counter to each side's current meta and add it to the pools,
+        /// so exploits get measured and priced instead of hiding outside what the population happens to play.
+        /// Returns the exploit gaps (attacker gain, defender gain) in raid-fraction points.
+        /// </summary>
+        public (double, double) InjectBestResponses(int iteration)
+        {
+            var poolA = attackers.Take(16).Concat(attackerArchive).ToList();
+            var poolD = defenders.Take(16).Concat(defenderArchive).ToList();
+            var r = new Random(Mix(seed, 31337 + iteration));
+            double eliteA = AttackerScore(attackers[0], poolD, 200, iteration * 3 + 1);
+            var bestA = attackers[0];
+            double bestAScore = eliteA;
+            for (int step = 0; step < 12; step++)
+            {
+                var cand = bestA.Mutate(r, 0.7f);
+                double sc = AttackerScore(cand, poolD, 200, iteration * 3 + 1);
+                if (sc > bestAScore) { bestA = cand; bestAScore = sc; }
+            }
+            double eliteD = DefenderScore(defenders[0], poolA, 200, iteration * 3 + 2);
+            var bestD = defenders[0];
+            double bestDScore = eliteD;
+            for (int step = 0; step < 12; step++)
+            {
+                var cand = bestD.Mutate(r, 0.7f);
+                double sc = DefenderScore(cand, poolA, 200, iteration * 3 + 2);
+                if (sc < bestDScore) { bestD = cand; bestDScore = sc; }
+            }
+            attackers[attackers.Count - 1] = bestA;
+            defenders[defenders.Count - 1] = bestD;
+            for (int k = 0; k < 2; k++)
+            {
+                attackerArchive.Add(bestA);
+                defenderArchive.Add(bestD);
+            }
+            return (bestAScore - eliteA, eliteD - bestDScore);
+        }
+
         #region Measurement
 
         void Archive()
@@ -263,7 +331,7 @@ namespace Corba.Tools
                 ref var l = ref Balance.Ladles[s];
                 switch ((SoupType)s)
                 {
-                    case SoupType.Mercimek: l.Magnitude = (float)Math.Clamp(l.Magnitude * f, 0.15, 0.75); break;
+                    case SoupType.Mercimek: l.Magnitude = (float)Math.Clamp(l.Magnitude * f, 0.15, 0.5); break;
                     case SoupType.Ezogelin: l.Magnitude = (float)Math.Clamp(l.Magnitude * f, 0.15, 1.2); break;
                     case SoupType.Yayla: l.Magnitude = (float)Math.Clamp(l.Magnitude * f, 25, 260); break;
                     case SoupType.Tarhana: l.Magnitude = (float)Math.Clamp(l.Magnitude * f, 0.15, 0.85); break;
@@ -276,7 +344,7 @@ namespace Corba.Tools
 
             const double target = 0.55;
             double hf = Math.Clamp(Math.Pow(Math.Max(0.05, m.MeanFraction) / target, 0.6 * rate), 0.88, 1.12);
-            if (adjustHunger) Balance.SofraHunger = (float)Math.Clamp(Math.Round(Balance.SofraHunger * hf), 30, 400);
+            if (adjustHunger) Balance.UnitHpScale = (float)Math.Clamp(Balance.UnitHpScale / hf, 0.4, 5.0);
         }
 
         #endregion
@@ -289,9 +357,11 @@ namespace Corba.Tools
             for (int it = 0; it < iterations; it++)
             {
                 Evolve(it == 0 ? 8 : 4, it);
+                var (gapA, gapD) = InjectBestResponses(it);
                 m = Measure(it);
+                Log($"exploit gaps: attacker +{gapA * 100:0} pts, defender +{gapD * 100:0} pts");
                 Log($"\n== iteration {it + 1}/{iterations}  ({simsRun:N0} sims, {(DateTime.Now - start).TotalSeconds:0.0}s)");
-                Log($"raid fraction {m.MeanFraction:0.000}  sofra fell {m.FellRate:P0}  units/half {m.UnitsPerHalf:0.0}  builds/half {m.BuildsPerHalf:0.0}  sofra {Balance.SofraHunger}");
+                Log($"raid fraction {m.MeanFraction:0.000}  sofra fell {m.FellRate:P0}  units/half {m.UnitsPerHalf:0.0}  builds/half {m.BuildsPerHalf:0.0}  raider hp x{Balance.UnitHpScale:0.00}");
                 Log($"value spread: units CV {Cv(m.UnitValue):0.00}  defences CV {Cv(m.DefValue):0.00}  ladles CV {Cv(m.LadleValue):0.00}");
                 Log("units:    " + string.Join("  ", Enumerable.Range(0, 10).Select(u => $"{Balance.Units[u].English.Split(' ').Last()} {Balance.Units[u].Cost} v{m.UnitValue[u] * 100:0.0} s{m.UnitShare[u]:P0}")));
                 Log("defences: " + string.Join("  ", Enumerable.Range(0, 10).Select(d => $"{Balance.Defences[d].English.Split(' ').Last()} {Balance.Defences[d].Cost} v{m.DefValue[d] * 100:0.0} s{m.DefShare[d]:P0}")));
@@ -302,9 +372,9 @@ namespace Corba.Tools
             for (int c = 0; c < 3; c++)
             {
                 double scale = Math.Clamp(m.MeanFraction / 0.55, 0.6, 1.6);
-                Balance.SofraHunger = (float)Math.Clamp(Math.Round(Balance.SofraHunger * scale), 30, 400);
+                Balance.UnitHpScale = (float)Math.Clamp(Balance.UnitHpScale / Math.Pow(scale, 0.8), 0.4, 5.0);
                 m = Measure(iterations + c);
-                Log($"calibration {c + 1}: sofra {Balance.SofraHunger} -> raid fraction {m.MeanFraction:0.000}, fell {m.FellRate:P0}");
+                Log($"calibration {c + 1}: raider hp x{Balance.UnitHpScale:0.00} -> raid fraction {m.MeanFraction:0.000}, fell {m.FellRate:P0}");
             }
             WriteTuning(tuningPath, m);
             WriteReport(reportPath, m, DateTime.Now - start);
@@ -325,6 +395,7 @@ namespace Corba.Tools
             sb.AppendLine("        static partial void ApplyTuning()");
             sb.AppendLine("        {");
             sb.AppendLine($"            SofraHunger = {F(Balance.SofraHunger)};");
+            sb.AppendLine($"            UnitHpScale = {F(Balance.UnitHpScale)};");
             sb.AppendLine($"            LadleCost = {Balance.LadleCost};");
             for (int u = 0; u < Balance.RecruitableUnitCount; u++)
             {
@@ -371,7 +442,7 @@ namespace Corba.Tools
                           "Each value is a paired A/B test on the same matchup and seed: give one side a little extra of one thing and measure the change in raid score. " +
                           "Costs are then nudged until every option is worth about the same per ladle of soup.");
             sb.AppendLine();
-            sb.AppendLine($"- Mean raid score: **{m.MeanFraction:P0}** of the Sofra (target 55%); Sofra emptied in {m.FellRate:P0} of halves; Sofra hunger {Balance.SofraHunger}");
+            sb.AppendLine($"- Mean raid score: **{m.MeanFraction:P0}** of the Sofra (target 55%); Sofra emptied in {m.FellRate:P0} of halves; Sofra hunger {Balance.SofraHunger}; raider HP x{Balance.UnitHpScale:0.00}");
             sb.AppendLine($"- Per half: {m.UnitsPerHalf:0.0} raiders sent, {m.BuildsPerHalf:0.0} defences built; ladle toss costs {Balance.LadleCost}");
             sb.AppendLine($"- Value spread (coefficient of variation, lower is more even): units {Cv(m.UnitValue):0.00}, defences {Cv(m.DefValue):0.00}, ladles {Cv(m.LadleValue):0.00}");
             sb.AppendLine();

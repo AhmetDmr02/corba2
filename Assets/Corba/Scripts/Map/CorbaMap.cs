@@ -162,6 +162,8 @@ namespace Corba
             return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
+        public Transform OcakObject { get; private set; }
+        public Transform SofraObject { get; private set; }
         public Station Ocak => Stations.Find(s => s.Kind == StationKind.Ocak);
         public Station Sofra => Stations.Find(s => s.Kind == StationKind.Sofra);
 
@@ -832,11 +834,13 @@ namespace Corba
                 switch (s.Kind)
                 {
                     case StationKind.Ocak:
-                        Place("ocak", s.Position, LookAtRoad(s.Position), 1f, GameData.Hex("8E5A3A")).AddComponent<BoxCollider>().size = new Vector3(3, 2, 3);
+                        var ocakGo = Place("ocak", s.Position, LookAtRoad(s.Position), 1f, GameData.Hex("8E5A3A"));
+                        ocakGo.AddComponent<BoxCollider>().size = new Vector3(3, 2, 3);
+                        OcakObject = ocakGo.transform;
                         Place("banner", s.Position + new Vector3(1.8f, 0, 1.8f), Quaternion.identity, 1f, GameData.Hex("C04A2C"));
                         break;
                     case StationKind.Sofra:
-                        Place("sofra", s.Position, LookAtRoad(s.Position), 1f, GameData.Hex("B98A55"));
+                        SofraObject = Place("sofra", s.Position, LookAtRoad(s.Position), 1f, GameData.Hex("B98A55")).transform;
                         break;
                     default:
                         var cauldron = Place("cauldron", s.Position, Quaternion.Euler(0, s.Index * 47f, 0), 1f, GameData.Hex("3D3A3A"));
@@ -851,6 +855,11 @@ namespace Corba
                         outward.y = 0;
                         var sign = Place("soup_sign", s.Position + outward.normalized * 1.55f, Quaternion.LookRotation(-outward.normalized), 1f, GameData.Soup(s.Soup).Identity);
                         Art.Tint(sign, GameData.Soup(s.Soup).Identity, 0.75f);
+                        var soupInfo = GameData.Soup(s.Soup);
+                        string role = s.Kind == StationKind.DefenderCauldron
+                            ? $"{soupInfo.Keyword}: {GameData.Defence(GameData.DefenceOption(s.Soup, 0)).English} / {GameData.Defence(GameData.DefenceOption(s.Soup, 1)).English}"
+                            : $"{soupInfo.Keyword}: {GameData.Unit(GameData.UnitOption(s.Soup, 0)).English} / {GameData.Unit(GameData.UnitOption(s.Soup, 1)).English}";
+                        WorldLabel.Create(root, s.Position + Vector3.up * 3.1f, soupInfo.Name, role, soupInfo.Identity, soupInfo.Glyph, 9f);
                         break;
                 }
             }

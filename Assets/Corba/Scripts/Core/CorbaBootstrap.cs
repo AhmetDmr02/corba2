@@ -56,6 +56,7 @@ namespace Corba
             cam.transform.position = new Vector3(0, 52, -58);
             cam.transform.rotation = Quaternion.LookRotation(new Vector3(0, -56, 58));
             if (cam.GetComponent<CameraRig>() == null) cam.gameObject.AddComponent<CameraRig>();
+            if (cam.GetComponent<Atmosphere>() == null) Atmosphere.Install(cam);
         }
 
         void SetupLighting()

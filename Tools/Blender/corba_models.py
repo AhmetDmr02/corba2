@@ -542,7 +542,7 @@ def fence():
 
 
 SOUP_GARNISH = (("#ffe14a", "#c9302b"), ("#8a1a12", "#5f9e3c"), ("#5f9e3c", "#7cc98e"), ("#8a2a12", "#f4ead2"), ("#f4ead2", "#c9302b"))
-SOUP_BAND = ("#f2b33d", "#d9442b", "#7cc98e", "#c77a35", "#a88fc9")
+SOUP_BAND = ("#f5b92e", "#e8412c", "#47c46b", "#9a57d6", "#38a3db")
 
 
 def soup_bowl(index):
@@ -608,7 +608,7 @@ RECIPES = {
     "fence": (fence, 256, False),
 }
 
-SOUP_LIQUIDS = ("#e8962e", "#c9502b", "#efe9d2", "#b5562f", "#e6dcc4")
+SOUP_LIQUIDS = ("#f0a92a", "#d0331c", "#b8edb4", "#8b47c4", "#cde9f2")
 
 
 MINION = dict(leg_top=0.3, neck=0.66, body_r=0.2, shoulder=(0.24, 0.55), hand=(0.3, 0.18, 0.5), hip_x=0.1, head_len=0.45)

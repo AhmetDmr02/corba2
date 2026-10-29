@@ -218,6 +218,29 @@ How the tuner works (`dotnet run -c Release -- tune`):
 
 **Anti-monoculture rules found by the simulator:** each repeat of the same defence costs +30%, and each repeat of the same unit in a half costs +5% (capped at +50%). Without these, the evolved meta collapsed into "spam Griddles" against "spam Saboteurs".
 
-## 14. Tuning knobs
+### Auditing the result (`dotnet run -c Release -- audit`)
+
+The tuner only proves "worth about the same per ladle against the bots' own meta". `audit` stress-tests that: it evolves a fresh population, measures meta diversity, hill-climbs a dedicated counter-strategy and plays one-soup plans for both sides. Results go to [Balance_Audit.md](Balance_Audit.md). The audit found what the tuner missed, and drove these design changes:
+
+- **Garlic Brute rush** (only Brutes, tiny waves, escorted) emptied the Sofra. The Brute lost root immunity, has less HP and smashes more slowly.
+- **Yayla-only and İşkembe-only defences** conceded the whole Sofra because they could only slow or delay. Slowed, rooted and feared raiders now take +20% damage, and Mint and Garlic hit harder.
+- **Hearty ladle + rally + armour** stacked too high, so total damage reduction is capped at 60%.
+- **Tuner method:** it now runs double-oracle style, adding each side's best exploit to the meta pool every iteration.
+
+## 14. Soup identity (readability)
+
+Each soup has a colour, a shape glyph and one keyword, used on cauldrons, pots, cards, the HUD and the Soup Book (**B**):
+
+| Soup | Colour | Glyph | Keyword | Theme |
+|---|---|---|---|---|
+| Mercimek | yellow | shield | Sturdy | tough walls, armoured raiders |
+| Ezogelin | red | flame | Spicy | burning damage, fast raiders |
+| Yayla | green | leaf | Cooling | slows on defence, healing on attack |
+| Tarhana | purple | bubbles | Sour | weaken: sour stacks, poison, tower slow |
+| İşkembe | blue | stink lines | Pungent | disrupt: fear, roots, stuns, demolition |
+
+Tarhana and İşkembe liquids are stylised (purple, blue) for readability rather than realism.
+
+## 15. Tuning knobs
 
 Everything numeric is in `Assets/Corba/Scripts/Sim/Balance.cs`; the tuner overrides go in `BalanceTuning.g.cs`. Cook feel (slosh spring, sprint, shove) stays in `GameData.cs`.
