@@ -10,3 +10,7 @@
 01:35:49 PLAYMODE EnteredPlayMode
 01:37:04 PLAYMODE ExitingPlayMode
 01:37:05 PLAYMODE EnteredEditMode
+13:24:46 PLAYMODE ExitingEditMode
+13:24:49 PLAYMODE EnteredPlayMode
+13:26:53 PLAYMODE ExitingPlayMode
+13:26:53 PLAYMODE EnteredEditMode
