@@ -30,6 +30,12 @@ namespace Corba
             Time.timeScale = parts.Length > 3 && float.TryParse(parts[3], out var ts) ? ts : 1f;
 
             yield return new WaitForSecondsRealtime(1.5f);
+            if (mode == "export")
+            {
+                MapExporter.Export((int)duration, Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Tools", "CorbaSim", "maps.json")));
+                File.WriteAllText(Path.Combine(Dir, "done.txt"), "done");
+                yield break;
+            }
             switch (mode)
             {
                 case "solo":

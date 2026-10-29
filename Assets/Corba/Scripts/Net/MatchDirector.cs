@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Corba.Sim;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -27,6 +28,8 @@ namespace Corba
         public readonly NetworkVariable<int> PlayerCount = new NetworkVariable<int>();
         public readonly NetworkVariable<bool> Paused = new NetworkVariable<bool>();
         public readonly NetworkVariable<int> Mode = new NetworkVariable<int>();
+        public readonly NetworkVariable<int> Marching = new NetworkVariable<int>();
+        public readonly NetworkVariable<double> WaveAutoAt = new NetworkVariable<double>();
         public NetworkList<int> Bank;
 
         public event System.Action<string, Color> Toast;
@@ -35,8 +38,20 @@ namespace Corba
         static ulong BotId(int slot) => ulong.MaxValue - 1 - (ulong)slot;
         public bool IsBotSlot(int slot) => slotClients[slot] == BotId(slot);
         readonly Queue<UnitId> spawnQueue = new Queue<UnitId>();
-        readonly DefenceBuild[] padBuilds = new DefenceBuild[16];
+        readonly List<UnitId> waveQueue = new List<UnitId>();
+        readonly Dictionary<int, UnitAgent> unitViews = new Dictionary<int, UnitAgent>();
+        readonly Dictionary<int, DefenceBuild> buildViews = new Dictionary<int, DefenceBuild>();
+        readonly double[] nextLadle = new double[2];
+        public NetworkList<int> Recruited;
+        readonly List<(double at, SoupType soup, System.Numerics.Vector2 pos)> pendingLadles = new List<(double, SoupType, System.Numerics.Vector2)>();
         double nextSpawnTime;
+        SimWorld world;
+        float simAccumulator;
+        int statBuilds, statUnits, statLadles;
+
+        public SimWorld World => world;
+        public float SimTime => world != null ? world.Time : 0f;
+        public int WaveCount => waveQueue.Count;
 
         public static double Now => NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening
             ? NetworkManager.Singleton.ServerTime.Time
@@ -49,6 +64,7 @@ namespace Corba
         void Awake()
         {
             Bank = new NetworkList<int>();
+            Recruited = new NetworkList<int>();
         }
 
         public override void OnNetworkSpawn()
@@ -60,6 +76,7 @@ namespace Corba
             if (IsServer)
             {
                 for (int i = 0; i < 10; i++) Bank.Add(0);
+                for (int i = 0; i < Balance.RecruitableUnitCount; i++) Recruited.Add(0);
                 Seed.Value = Random.Range(1, int.MaxValue);
                 CorbaMap.Instance.Build(Seed.Value);
                 NetworkManager.OnClientConnectedCallback += OnClientConnected;
@@ -103,6 +120,15 @@ namespace Corba
         public int BankOf(int slot, SoupType soup) => Bank.Count > slot * 5 + (int)soup ? Bank[slot * 5 + (int)soup] : 0;
 
         public bool IsDefender(int slot) => DefenderSlot.Value == slot;
+
+        public int RecruitCost(UnitId unit) => Balance.RecruitCost(unit, Recruited.Count > (int)unit ? Recruited[(int)unit] : 0);
+
+        public int BuildCost(DefenceId id)
+        {
+            int owned = 0;
+            foreach (var b in DefenceBuild.All) if (b.Kind.Value == id) owned++;
+            return Balance.BuildCost(id, owned);
+        }
 
         #region Connections
 
@@ -202,9 +228,15 @@ namespace Corba
             int firstDefender = Course.Value % 2 == 0 ? 0 : 1;
             DefenderSlot.Value = half == 0 ? firstDefender : 1 - firstDefender;
             ClearField();
+            world = CreateWorld();
+            statBuilds = statUnits = statLadles = 0;
             for (int i = 0; i < Bank.Count; i++) Bank[i] = 0;
+            for (int i = 0; i < Recruited.Count; i++) Recruited[i] = 0;
             spawnQueue.Clear();
+            waveQueue.Clear();
+            pendingLadles.Clear();
             Queued.Value = 0;
+            Marching.Value = 0;
             Hunger.Value = GameData.SofraHunger;
 
             for (int s = 0; s < 2; s++)
@@ -223,6 +255,7 @@ namespace Corba
         {
             SetPhase(MatchPhase.Raid, GameData.RaidSeconds);
             nextSpawnTime = Now;
+            ServerSendWave(AttackerSlot);
             SendToast("Raid! Units are marching", GameData.Hex("F2B33D"));
         }
 
@@ -236,9 +269,12 @@ namespace Corba
                 AddScore(attacker, bonus);
                 SendToast($"The Sofra is empty! +{bonus} speed bonus", GameData.Hex("F2B33D"));
             }
+            Debug.Log($"[Corba] half end: course {Course.Value + 1} half {Half.Value + 1} attacker {AttackerSlot} score {(AttackerSlot == 0 ? ScoreA.Value : ScoreB.Value)} sofraFell {sofraFell} builds {statBuilds} raiders {statUnits} ladles {statLadles}");
             SetPhase(MatchPhase.HalfResult, GameData.HalfResultSeconds);
             spawnQueue.Clear();
+            waveQueue.Clear();
             Queued.Value = 0;
+            Marching.Value = 0;
         }
 
         void AfterHalfResult()
@@ -287,7 +323,19 @@ namespace Corba
                 if (u.NetworkObject.IsSpawned) u.NetworkObject.Despawn(true);
             foreach (var b in new List<DefenceBuild>(DefenceBuild.All))
                 if (b.NetworkObject.IsSpawned) b.NetworkObject.Despawn(true);
-            System.Array.Clear(padBuilds, 0, padBuilds.Length);
+            unitViews.Clear();
+            buildViews.Clear();
+        }
+
+        static SimWorld CreateWorld()
+        {
+            var map = CorbaMap.Instance;
+            var pts = new System.Numerics.Vector2[map.RoadPoints.Count];
+            for (int i = 0; i < pts.Length; i++) pts[i] = GameData.Sim(map.RoadPoints[i]);
+            var pads = new SimPad[map.Pads.Count];
+            for (int i = 0; i < pads.Length; i++)
+                pads[i] = new SimPad { Tower = GameData.Sim(map.Pads[i].TowerPosition), RoadDistance = map.Pads[i].RoadDistance, HighGround = map.Pads[i].HighGround };
+            return new SimWorld(new SimRoad(pts, map.RoadDistances), pads);
         }
 
         [Rpc(SendTo.Server)]
@@ -301,10 +349,58 @@ namespace Corba
             if (!InPlay || IsDefender(slot) || (int)unit >= GameData.RecruitableUnitCount) return false;
             var info = GameData.Unit(unit);
             int idx = slot * 5 + (int)info.Soup;
-            if (Bank[idx] < info.Cost) return false;
-            Bank[idx] -= info.Cost;
-            spawnQueue.Enqueue(unit);
-            Queued.Value = spawnQueue.Count;
+            int cost = RecruitCost(unit);
+            if (Bank[idx] < cost) return false;
+            Bank[idx] -= cost;
+            Recruited[(int)unit]++;
+            if (waveQueue.Count == 0) WaveAutoAt.Value = Now + Balance.AutoWaveSeconds;
+            waveQueue.Add(unit);
+            Queued.Value = waveQueue.Count;
+            return true;
+        }
+
+        /// <summary>Sends every queued raider down the road. Holding builds a bigger, buff-able wave.</summary>
+        public bool ServerSendWave(int slot)
+        {
+            if (Phase.Value != MatchPhase.Raid || IsDefender(slot) || waveQueue.Count == 0) return false;
+            foreach (var u in waveQueue) spawnQueue.Enqueue(u);
+            SendToast($"Wave of {waveQueue.Count} marching!", GameData.Hex("FFB040"));
+            waveQueue.Clear();
+            Queued.Value = 0;
+            Marching.Value = spawnQueue.Count;
+            return true;
+        }
+
+        [Rpc(SendTo.Server)]
+        public void SendWaveRpc(RpcParams p = default)
+        {
+            int slot = SlotOf(p.Receive.SenderClientId);
+            if (slot >= 0) ServerSendWave(slot);
+        }
+
+        public bool LadleReady(int slot) => Now >= nextLadle[slot];
+
+        public bool ServerLadle(ChefController chef, Vector3 target)
+        {
+            int slot = chef.Slot.Value;
+            if (Phase.Value != MatchPhase.Raid || IsDefender(slot) || chef.Soup.Value < 0 || world == null) return false;
+            if (chef.Fill.Value + 0.01f < Balance.LadleCost || Now < nextLadle[slot]) return false;
+            Vector3 from = chef.transform.position;
+            Vector3 to = target - from;
+            to.y = 0f;
+            if (to.magnitude > Balance.LadleRange) target = from + to.normalized * Balance.LadleRange;
+            target.y = CorbaMap.Instance.Height(target);
+            nextLadle[slot] = Now + Balance.LadleCooldown;
+            chef.Fill.Value -= Balance.LadleCost;
+            var soup = (SoupType)chef.Soup.Value;
+            if (chef.Fill.Value < 0.5f)
+            {
+                chef.Fill.Value = 0f;
+                chef.Soup.Value = -1;
+            }
+            LadleFxRpc(from + Vector3.up * 1.3f, target, soup);
+            statLadles++;
+            pendingLadles.Add((Now + 0.45, soup, GameData.Sim(target)));
             return true;
         }
 
@@ -319,14 +415,22 @@ namespace Corba
                     if (now >= PhaseEnd.Value) BeginRaid();
                     break;
                 case MatchPhase.Raid:
+                    if (waveQueue.Count > 0 && (waveQueue.Count >= Balance.AutoWaveSize || now >= WaveAutoAt.Value)) ServerSendWave(AttackerSlot);
                     if (spawnQueue.Count > 0 && now >= nextSpawnTime)
                     {
                         var id = spawnQueue.Dequeue();
-                        Queued.Value = spawnQueue.Count;
+                        Marching.Value = spawnQueue.Count;
                         SpawnUnit(id, 0f, Random.Range(-1.1f, 1.1f));
                         nextSpawnTime = now + GameData.SpawnInterval;
                     }
-                    if (now >= PhaseEnd.Value) EndHalf(false);
+                    for (int i = pendingLadles.Count - 1; i >= 0; i--)
+                    {
+                        if (now < pendingLadles[i].at) continue;
+                        world?.Ladle(pendingLadles[i].soup, pendingLadles[i].pos);
+                        pendingLadles.RemoveAt(i);
+                    }
+                    StepWorld();
+                    if (Phase.Value == MatchPhase.Raid && now >= PhaseEnd.Value) EndHalf(false);
                     break;
                 case MatchPhase.HalfResult:
                     if (now >= PhaseEnd.Value) AfterHalfResult();
@@ -379,24 +483,26 @@ namespace Corba
             if (CorbaMap.FlatDist(chef.transform.position, pad.TowerPosition) > GameData.InteractRange + 1.5f) return false;
             var soup = (SoupType)chef.Soup.Value;
 
-            var existing = padBuilds[padIndex];
-            if (existing != null && existing.IsSpawned)
+            var existing = PadBuild(padIndex);
+            if (existing != null && existing.IsSpawned && existing.Sim != null)
             {
                 var info = existing.Info;
                 if (info.Soup != soup) return false;
-                int cost = GameData.UpgradeCost(info.Id, existing.Level.Value);
+                int cost = GameData.UpgradeCost(info.Id, existing.Sim.Level);
                 if (chef.Fill.Value + 0.01f < cost) return false;
                 chef.Fill.Value -= cost;
-                existing.Level.Value++;
-                existing.Hp.Value = existing.MaxHp;
+                world.Upgrade(existing.Sim);
+                existing.Level.Value = existing.Sim.Level;
+                existing.Hp.Value = existing.Sim.Hp;
                 PourFxRpc(existing.transform.position + Vector3.up * 1.5f, GameData.Soup(soup).Liquid);
                 return true;
             }
 
             var id = GameData.DefenceOption(soup, Mathf.Clamp(option, 0, 1));
             var def = GameData.Defence(id);
-            if (chef.Fill.Value + 0.01f < def.Cost) return false;
-            chef.Fill.Value -= def.Cost;
+            int buildCost = BuildCost(id);
+            if (chef.Fill.Value + 0.01f < buildCost) return false;
+            chef.Fill.Value -= buildCost;
 
             var prefab = Resources.Load<GameObject>("Corba/Net/Build");
             bool onRoad = def.Kind != DefenceKind.Tower;
@@ -404,19 +510,17 @@ namespace Corba
             var rot = onRoad ? pad.TrapRotation : Quaternion.identity;
             var go = Instantiate(prefab, pos, rot);
             var build = go.GetComponent<DefenceBuild>();
+            var sim = world.AddBuild(id, padIndex, GameData.Sim(pos));
+            build.Sim = sim;
             build.Kind.Value = id;
             build.Pad.Value = padIndex;
             build.Level.Value = 1;
-            build.Hp.Value = def.Hp;
+            build.Hp.Value = sim.Hp;
             go.GetComponent<NetworkObject>().Spawn(true);
-            padBuilds[padIndex] = build;
+            buildViews[sim.Id] = build;
+            statBuilds++;
             PourFxRpc(pos + Vector3.up * 1.2f, GameData.Soup(soup).Liquid);
             return true;
-        }
-
-        public void ServerReleasePad(int padIndex)
-        {
-            if (padIndex >= 0 && padIndex < padBuilds.Length) padBuilds[padIndex] = null;
         }
 
         public DefenceBuild PadBuild(int padIndex)
@@ -447,22 +551,115 @@ namespace Corba
 
         public UnitAgent SpawnUnit(UnitId id, float dist, float lateral)
         {
+            var sim = world.SpawnUnit(id, dist, lateral);
+            statUnits++;
+            return CreateUnitView(sim);
+        }
+
+        UnitAgent CreateUnitView(SimUnit sim)
+        {
             var prefab = Resources.Load<GameObject>("Corba/Net/Unit");
-            var pos = CorbaMap.Instance.SampleRoad(dist, lateral);
+            var pos = CorbaMap.Instance.SampleRoad(sim.Dist, sim.Lateral);
             var go = Instantiate(prefab, pos, Quaternion.identity);
             var unit = go.GetComponent<UnitAgent>();
-            unit.Kind.Value = id;
-            unit.Distance.Value = dist;
-            unit.Lateral.Value = lateral;
-            unit.Hp.Value = GameData.Unit(id).Hp;
+            unit.Sim = sim;
+            unit.Kind.Value = sim.Kind;
+            unit.Distance.Value = sim.Dist;
+            unit.Lateral.Value = sim.Lateral;
+            unit.Hp.Value = sim.Hp;
             go.GetComponent<NetworkObject>().Spawn(true);
+            unitViews[sim.Id] = unit;
             return unit;
         }
 
-        public void ServerBite(UnitAgent unit)
+        void StepWorld()
+        {
+            if (world == null) return;
+            var chef = ChefController.BySlot[AttackerSlot];
+            world.RallyActive = chef != null;
+            if (chef != null) world.RallyPoint = GameData.Sim(chef.transform.position);
+
+            simAccumulator += Time.deltaTime;
+            int steps = 0;
+            while (simAccumulator >= Balance.SimStep && steps < 8)
+            {
+                simAccumulator -= Balance.SimStep;
+                steps++;
+                int bitten = world.Tick(Balance.SimStep);
+                ProcessEvents();
+                if (bitten > 0) ServerBite(bitten);
+                if (Phase.Value != MatchPhase.Raid) break;
+            }
+        }
+
+        void ProcessEvents()
+        {
+            var map = CorbaMap.Instance;
+            foreach (var e in world.Events)
+            {
+                switch (e.Type)
+                {
+                    case SimEventType.Shot:
+                    case SimEventType.Lob:
+                    {
+                        if (!buildViews.TryGetValue(e.Build, out var b) || b == null) break;
+                        Vector3 from = b.transform.position + Vector3.up * 2.6f;
+                        Vector3 to = unitViews.TryGetValue(e.Unit, out var target) && target != null
+                            ? target.transform.position + Vector3.up * 0.8f
+                            : GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.4f);
+                        var color = b.Kind.Value == DefenceId.Chili ? GameData.Hex("E0402A") : b.Kind.Value == DefenceId.Ferment ? GameData.Hex("C77A35") : GameData.Soup(b.Info.Soup).Liquid;
+                        ShotFxRpc(b.NetworkObjectId, from, to, color, e.Value, e.Type == SimEventType.Lob);
+                        break;
+                    }
+                    case SimEventType.Pulse:
+                        RingFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.5f), (DefenceId)e.Tag == DefenceId.Mint ? GameData.Hex("9FE3B5") : GameData.Hex("C9B3E6"), e.Value);
+                        break;
+                    case SimEventType.Cloud:
+                        CloudFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.4f), e.Value, e.Tag / 10f);
+                        break;
+                    case SimEventType.Sabotage:
+                        RingFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.3f), GameData.Hex("C77A35"), 1.5f);
+                        break;
+                    case SimEventType.Snare:
+                        RingFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.3f), GameData.Hex("A88FC9"), 2f);
+                        break;
+                    case SimEventType.Explode:
+                        RingFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 1f), GameData.Hex("D7E37A"), e.Value);
+                        break;
+                    case SimEventType.Ladle:
+                        RingFxRpc(GameData.World(e.To, map.Height(e.To.X, e.To.Y) + 0.3f), GameData.Soup((SoupType)e.Tag).Identity, e.Value);
+                        break;
+                    case SimEventType.Bite:
+                        if (unitViews.TryGetValue(e.Unit, out var biter) && biter != null)
+                        {
+                            biter.MarkBite();
+                            if (biter.IsSpawned) biter.NetworkObject.Despawn(true);
+                        }
+                        unitViews.Remove(e.Unit);
+                        break;
+                    case SimEventType.UnitDied:
+                        if (unitViews.TryGetValue(e.Unit, out var dead) && dead != null && dead.IsSpawned) dead.NetworkObject.Despawn(true);
+                        unitViews.Remove(e.Unit);
+                        break;
+                    case SimEventType.UnitSpawned:
+                    {
+                        var u = world.FindUnit(e.Unit);
+                        if (u != null) CreateUnitView(u);
+                        break;
+                    }
+                    case SimEventType.BuildDestroyed:
+                        if (buildViews.TryGetValue(e.Build, out var gone) && gone != null && gone.IsSpawned) gone.NetworkObject.Despawn(true);
+                        buildViews.Remove(e.Build);
+                        break;
+                }
+            }
+            world.Events.Clear();
+        }
+
+        void ServerBite(int bite)
         {
             if (Phase.Value != MatchPhase.Raid) return;
-            float dmg = Mathf.Min(unit.Info.Bite, Hunger.Value);
+            float dmg = Mathf.Min(bite, Hunger.Value);
             Hunger.Value -= dmg;
             AddScore(AttackerSlot, Mathf.RoundToInt(dmg));
             BiteFxRpc(CorbaMap.Instance.Sofra.Position + Vector3.up * 1.4f, Mathf.RoundToInt(dmg));
@@ -486,6 +683,26 @@ namespace Corba
 
         [Rpc(SendTo.ClientsAndHost)]
         void PourFxRpc(Vector3 pos, Color c) => FX.Splash(pos, c, 14);
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void ShotFxRpc(ulong buildObject, Vector3 from, Vector3 to, Color color, float flight, bool lob)
+        {
+            FX.Projectile(from, to, color, flight, lob);
+            if (NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(buildObject, out var obj) && obj.TryGetComponent<DefenceBuild>(out var b)) b.Recoil();
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void RingFxRpc(Vector3 at, Color color, float radius) => FX.Ring(at, color, radius);
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void CloudFxRpc(Vector3 at, float radius, float duration) => FX.Cloud(at, GameData.Hex("B9C86A"), radius, duration);
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void LadleFxRpc(Vector3 from, Vector3 to, SoupType soup)
+        {
+            FX.Projectile(from, to, GameData.Soup(soup).Liquid, 0.45f, true);
+            Tween.Wait(0.45f, () => FX.Splash(to + Vector3.up * 0.3f, GameData.Soup(soup).Liquid, 18));
+        }
 
         [Rpc(SendTo.ClientsAndHost)]
         void BiteFxRpc(Vector3 pos, int amount)

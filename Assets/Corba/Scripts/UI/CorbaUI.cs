@@ -60,6 +60,7 @@ namespace Corba
             public Button Button;
             public RectTransform Rt;
             public Image Shade;
+            public Text Cost;
             public bool WasAffordable;
         }
 
@@ -265,17 +266,17 @@ namespace Corba
                     int idx = (int)info.Id;
                     btn.onClick.AddListener(() => Recruit(idx));
                     Panel(rt, "icon_" + info.Model, new Vector2(0.5f, 1f), new Vector2(0, -46), new Vector2(80, 80));
-                    Text(rt, info.Cost.ToString(), 22, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 30), new Vector2(90, 28), true);
+                    var costText = Text(rt, info.Cost.ToString(), 22, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 30), new Vector2(90, 28), true);
                     Text(rt, ((idx + 1) % 10).ToString(), 16, Gold, TextAnchor.MiddleCenter, new Vector2(0f, 1f), new Vector2(16, -14), new Vector2(26, 22));
                     Text(rt, ShortName(info.Name), 13, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(96, 18));
                     var shade = Image(Stretch("Shade", rt), "ui_card", new Color(0.1f, 0.06f, 0.04f, 0.6f));
                     var tip = rt.gameObject.AddComponent<Tooltip>();
                     tip.Text = $"<b>{info.Name}</b>  <i>{info.English}</i>\n{info.Blurb}\nHP {info.Hp} • Speed {info.Speed} • Bite {info.Bite}";
                     rt.gameObject.AddComponent<JuicyButton>();
-                    cards.Add(new RecruitCard { Id = info.Id, Button = btn, Rt = rt, Shade = shade });
+                    cards.Add(new RecruitCard { Id = info.Id, Button = btn, Rt = rt, Shade = shade, Cost = costText });
                 }
             }
-            queueText = Text(recruitBar, "", 18, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, 14), new Vector2(300, 26));
+            queueText = Text(recruitBar, "", 18, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, 18), new Vector2(620, 28));
         }
 
         static string ShortName(string n)
@@ -649,8 +650,10 @@ namespace Corba
                 var info = GameData.Defence(GameData.DefenceOption(soup, i));
                 var sprite = Art.Sprite("icon_" + info.Model);
                 buildIcons[i].sprite = sprite != null ? sprite : Art.Sprite("ui_badge");
-                bool afford = me.DisplayFill + 0.01f >= info.Cost;
-                buildTexts[i].text = $"<size=24><color=#F2B33D>{info.Name}</color></size>\n<i>{info.English}</i> • {info.Kind}\n{info.Blurb}\n<color={(afford ? "#B8F0B0" : "#FF9A80")}><b>Cost {info.Cost}</b></color>";
+                int cost = MatchDirector.Instance.BuildCost(info.Id);
+                bool afford = me.DisplayFill + 0.01f >= cost;
+                string repeat = cost > info.Cost ? " <size=15>(repeat +)</size>" : "";
+                buildTexts[i].text = $"<size=24><color=#F2B33D>{info.Name}</color></size>\n<i>{info.English}</i> • {info.Kind}\n{info.Blurb}\n<color={(afford ? "#B8F0B0" : "#FF9A80")}><b>Cost {cost}</b></color>{repeat}";
                 buildCards[i].GetComponent<Image>().color = afford ? Color.white : new Color(0.7f, 0.6f, 0.6f);
             }
         }
@@ -668,7 +671,10 @@ namespace Corba
             foreach (var card in cards)
             {
                 var info = GameData.Unit(card.Id);
-                bool afford = d.BankOf(mySlot, info.Soup) >= info.Cost;
+                int cost = d.RecruitCost(card.Id);
+                bool afford = d.BankOf(mySlot, info.Soup) >= cost;
+                card.Cost.text = cost.ToString();
+                card.Cost.color = cost > info.Cost ? GameData.Hex("FFC28A") : Cream;
                 card.Button.interactable = afford;
                 card.Shade.gameObject.SetActive(!afford);
                 if (afford && !card.WasAffordable) card.Rt.Pop(0.7f, 0.35f);
@@ -680,7 +686,12 @@ namespace Corba
                     Tween.Punch(card.Rt, 0.2f, 0.3f);
                 }
             }
-            queueText.text = d.Queued.Value > 0 ? $"{d.Queued.Value} raiders waiting to march" : "";
+            string wave = d.Queued.Value > 0
+                ? (d.Phase.Value == MatchPhase.Raid
+                    ? $"Wave: {d.Queued.Value} ready  [G] send  • auto in {Mathf.Max(0, Mathf.CeilToInt((float)(d.WaveAutoAt.Value - MatchDirector.Now)))}s"
+                    : $"Wave: {d.Queued.Value} ready • marches at raid start")
+                : d.Marching.Value > 0 ? $"{d.Marching.Value} raiders marching" : "Recruit raiders, then send them as a wave";
+            queueText.text = wave;
         }
 
         void UpdateObjective(MatchDirector d, ChefController me, bool defender, bool spectator)

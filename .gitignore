@@ -107,3 +107,8 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Headless balancer build output and debug dumps
+/Tools/CorbaSim/bin/
+/Tools/CorbaSim/obj/
+/Tools/CorbaSim/navdebug/

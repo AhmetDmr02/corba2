@@ -94,6 +94,8 @@ A clean round trip is ~16–20 s. A typical player keeps **75–85 %** of each p
 
 ## 6. Defence — 10 builds (2 per soup)
 
+> **Numbers in this table are the original design targets.** Live costs and stats come from the Monte Carlo balancer (section 13) and are listed in [Balance_Report.md](Balance_Report.md).
+
 The defender walks to an empty pad with a full-enough pot, presses **E**, and picks **1** or **2**. The soup in the pot decides which two builds are offered. Pouring the same soup into your own build upgrades it (**Lv2: 80 % of base cost, ×1.4 stats; Lv3: 100 % of base cost, ×1.9 stats**).
 
 Towers have **300 HP** and can be damaged by siege units. Traps sit on the road next to their pad, **can't be damaged**, and can only be disabled.
@@ -114,6 +116,8 @@ Towers have **300 HP** and can be damaged by siege units. Traps sit on the road 
 **Efficiency check (DPS per 100 ladles, single target):** Catapult 36 (+splash), Chili 38, Ferment 24 (×1.4 team amp at 5 stacks), Garlic 6 (+~2 s stolen per unit per pulse), Mint 7 (+40 % time-on-target for every tower). Supports trade raw DPS for multipliers, and a mix always beats spamming one tower.
 
 ## 7. Attack — 10 units (2 per soup)
+
+> **Numbers in this table are the original design targets.** Live costs and stats come from the Monte Carlo balancer (section 13) and are listed in [Balance_Report.md](Balance_Report.md).
 
 The attacker pours soup at the **Ocak** to bank it (by soup type), then recruits from the recruit bar. Units queue and leave the Ocak 0.6 s apart. During prep the queue fills, and everything marches when the raid starts.
 
@@ -185,5 +189,35 @@ There's no dominant soup. Mono-soup defences have a hard counter on the attack s
   Mercimek **gold**, Ezogelin **red**, Yayla **mint**, Tarhana **amber**, İşkembe **lavender**.
 - **UI:** parchment panels with painted brown borders, wooden plank buttons, painted soup badges, and unit/tower portraits rendered from the actual models.
 
-## 12. Tuning knobs (all in `GameData.cs`)
-Phase lengths, pot capacity, slosh spring/damping/threshold, spill multipliers, every unit and tower stat, upgrade multipliers, Sofra HP, comeback bonus.
+## 12. The attacker's raid: more than carrying
+
+Carrying soup to the Ocak buys raiders, but the raid itself is where the attacker plays:
+
+- **Waves.** Recruited raiders wait at the Ocak. Press **G** to send them all at once, or they leave by themselves at 10 raiders or after 14 s. Big waves overwhelm single-target towers and set up ladle combos. Anything queued during prep marches when the raid starts.
+- **Ladle toss (R / right-click).** Carry a pot onto the battlefield and throw ladles of it (cheap per toss, 13 m range, 3.6 m splash). Each soup does something different:
+  - **Mercimek, Hearty:** raiders in the splash take far less damage.
+  - **Ezogelin, Spicy:** raiders sprint through tower range.
+  - **Yayla, Soothing:** heals raiders and clears slows, burns and roots.
+  - **Tarhana, Sour fog:** towers in the fog fire much slower.
+  - **İşkembe, Stench:** stuns towers briefly, disarms traps, and raiders ignore fear and roots.
+- **Rally.** Raiders within 5 m of the attacking cook march 20% faster and take 15% less damage, so escorting a wave matters.
+- **Counterplay.** The defender can elbow the escorting attacker to make them spill, and the attacker's pot is what's being spent.
+
+So the raid becomes a loop: bank soup and recruit, hold and send a wave, grab a support soup, escort the wave and throw the right ladle at the right tower.
+
+## 13. Balance: headless Monte Carlo
+
+All combat rules live in one engine-free C# core, `Assets/Corba/Scripts/Sim`. The Unity server ticks it at 20 Hz, and units and towers are network views of it. `Tools/CorbaSim` is a .NET console app that compiles the *same* files and runs about 11,000 simulated halves per second on 16 threads, using cook travel times taken from real exported maps (NavGrid walking distances).
+
+How the tuner works (`dotnet run -c Release -- tune`):
+
+1. **Co-evolution.** Populations of attacker and defender strategies (unit mix, build preferences, wave size, support share, ladle choice, adaptivity) evolve against each other. An archive of past elites is kept (fictitious play), so prices follow the whole meta instead of chasing its latest swing.
+2. **Paired A/B measurement.** The same matchup and seed is replayed with one extra unit, defence or ladle pot, to measure what each is worth per ladle of soup.
+3. **Adjustment.** Costs move until value per ladle is even. Anything above twice its fair share of elite spend gets a small dominance penalty. Options stuck at a cost bound get their stats changed instead. The Sofra is sized for a 55% average raid score.
+4. **Output.** `BalanceTuning.g.cs` (compiled by Unity and the tool), the bots' value weights, and `Docs/Balance_Report.md`.
+
+**Anti-monoculture rules found by the simulator:** each repeat of the same defence costs +30%, and each repeat of the same unit in a half costs +5% (capped at +50%). Without these, the evolved meta collapsed into "spam Griddles" against "spam Saboteurs".
+
+## 14. Tuning knobs
+
+Everything numeric is in `Assets/Corba/Scripts/Sim/Balance.cs`; the tuner overrides go in `BalanceTuning.g.cs`. Cook feel (slosh spring, sprint, shove) stays in `GameData.cs`.

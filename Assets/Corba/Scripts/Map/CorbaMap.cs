@@ -75,6 +75,10 @@ namespace Corba
 
         readonly List<Vector3> roadPoints = new List<Vector3>();
         readonly List<float> roadDist = new List<float>();
+        public IReadOnlyList<Vector3> RoadPoints => roadPoints;
+        NavGrid nav;
+        public NavGrid Nav => nav ??= new NavGrid(this);
+        public IReadOnlyList<float> RoadDistances => roadDist;
         Transform root;
         System.Random rng;
 
@@ -253,10 +257,32 @@ namespace Corba
         {
             if (seed == Seed && root != null) return;
             Seed = seed;
-            if (root != null) Destroy(root.gameObject);
-            root = new GameObject("Map_" + seed).transform;
+            // Props can still wall off a region the tile check thought was open, so the nav grid has the final word.
+            // Rerolls are deterministic, so every peer lands on the same layout.
+            for (int layout = 0; layout < 12; layout++)
+            {
+                BuildLayout(seed + layout * 1000003);
+                if (Nav.AllConnected(KeyPoints())) break;
+                if (layout == 11) Debug.LogWarning($"[Corba] map {seed}: no fully connected layout found, using the last one");
+            }
+            Rebuilt?.Invoke();
+        }
+
+        List<Vector3> KeyPoints()
+        {
+            var pts = new List<Vector3> { AttackerSpawn, DefenderSpawn, CellCenter(MarketCell), CellCenter(KitchenCell) };
+            foreach (var s in Stations) pts.Add(s.Position);
+            foreach (var p in Pads) pts.Add(p.TowerPosition);
+            return pts;
+        }
+
+        void BuildLayout(int layoutSeed)
+        {
+            if (root != null) DestroyImmediate(root.gameObject);
+            nav = null;
+            root = new GameObject("Map_" + layoutSeed).transform;
             root.SetParent(transform, false);
-            rng = new System.Random(seed);
+            rng = new System.Random(layoutSeed);
 
             for (int attempt = 0; attempt < 20; attempt++)
             {
@@ -274,7 +300,6 @@ namespace Corba
             DecorateRoad();
             PlaceBumpsAndDecor();
             BuildLabels();
-            Rebuilt?.Invoke();
         }
 
         float Rand(float a, float b) => a + (float)rng.NextDouble() * (b - a);

@@ -12,6 +12,9 @@ namespace Corba
         public bool Option1;
         public bool Option2;
         public bool Shove;
+        public bool Ladle;
+        public bool SendWave;
+        public Vector3 Aim;
     }
 
     [RequireComponent(typeof(CharacterController))]
@@ -144,7 +147,43 @@ namespace Corba
             input.Option1 = kb.digit1Key.wasPressedThisFrame || kb.numpad1Key.wasPressedThisFrame;
             input.Option2 = kb.digit2Key.wasPressedThisFrame || kb.numpad2Key.wasPressedThisFrame;
             input.Shove = kb.qKey.wasPressedThisFrame;
+            var mouse = Mouse.current;
+            input.Ladle = kb.rKey.wasPressedThisFrame || (mouse != null && mouse.rightButton.wasPressedThisFrame);
+            input.SendWave = kb.gKey.wasPressedThisFrame;
+            input.Aim = AimPoint();
             return input;
+        }
+
+        public Vector3 AimPoint()
+        {
+            var cam = Camera.main;
+            var mouse = Mouse.current;
+            Vector3 fallback = transform.position + transform.forward * 8f;
+            if (cam == null || mouse == null) return fallback;
+            var ray = cam.ScreenPointToRay(mouse.position.ReadValue());
+            if (Physics.Raycast(ray, out var hit, 200f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                Vector3 p = hit.point;
+                Vector3 d = p - transform.position;
+                d.y = 0f;
+                if (d.magnitude > Balance.LadleRange) p = transform.position + d.normalized * Balance.LadleRange;
+                p.y = CorbaMap.Instance != null ? CorbaMap.Instance.Height(p) : p.y;
+                return p;
+            }
+            return fallback;
+        }
+
+        [Rpc(SendTo.Server)]
+        void LadleRpc(Vector3 target)
+        {
+            if (Director != null && Director.ServerLadle(this, target)) LadleAnimRpc();
+        }
+
+        [Rpc(SendTo.ClientsAndHost)]
+        void LadleAnimRpc()
+        {
+            animator.Trigger("Shove", 1.6f);
+            if (potRoot != null) Tween.Punch(potRoot, 0.3f, 0.3f);
         }
 
         void OwnerUpdate()
@@ -217,6 +256,16 @@ namespace Corba
             }
 
             UpdatePromptAndInteract(input);
+
+            if (director != null && director.Phase.Value == MatchPhase.Raid && !director.IsDefender(Slot.Value))
+            {
+                if (input.Ladle && Soup.Value >= 0 && DisplayFill >= Balance.LadleCost) LadleRpc(input.Aim);
+                if (input.SendWave)
+                {
+                    if (IsServer) director.ServerSendWave(Slot.Value);
+                    else director.SendWaveRpc();
+                }
+            }
 
             if (input.Shove && canAct && MatchDirector.Now >= shoveReadyAt)
             {
@@ -309,6 +358,11 @@ namespace Corba
                     Prompt = $"[E] Pour {Mathf.FloorToInt(DisplayFill)} ladles into the Ocak";
                     if (input.Interact) PourRpc();
                 }
+                else if (Soup.Value >= 0 && director.Phase.Value == MatchPhase.Raid && DisplayFill >= Balance.LadleCost)
+                {
+                    var l = Balance.Ladles[Soup.Value];
+                    Prompt = $"[R] / Right-click: toss {l.Name} ladle ({Balance.LadleCost}) • {l.Blurb}";
+                }
                 return;
             }
 
@@ -336,7 +390,7 @@ namespace Corba
             }
             var a = GameData.Defence(GameData.DefenceOption(soup, 0));
             var b = GameData.Defence(GameData.DefenceOption(soup, 1));
-            Prompt = $"[1] {a.Name} ({a.Cost})     [2] {b.Name} ({b.Cost})";
+            Prompt = $"[1] {a.Name} ({director.BuildCost(a.Id)})     [2] {b.Name} ({director.BuildCost(b.Id)})";
             if (input.Option1) BuildRpc(pad.Index, 0);
             else if (input.Option2) BuildRpc(pad.Index, 1);
         }
@@ -427,8 +481,33 @@ namespace Corba
 
         public void Cheer() => animator.Trigger("Cheer");
 
+        Transform reticle;
+
+        void UpdateReticle()
+        {
+            var d = Director;
+            bool show = IsOwner && !IsBot.Value && d != null && d.Phase.Value == MatchPhase.Raid && !d.IsDefender(Slot.Value) && Soup.Value >= 0 && DisplayFill >= Balance.LadleCost;
+            if (show && reticle == null)
+            {
+                var go = new GameObject("LadleReticle");
+                go.AddComponent<MeshFilter>().sharedMesh = FX.Quad;
+                var r = go.AddComponent<MeshRenderer>();
+                r.sharedMaterial = FX.Mat("fx_ring");
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                reticle = go.transform;
+                reticle.rotation = Quaternion.Euler(90, 0, 0);
+            }
+            if (reticle == null) return;
+            reticle.gameObject.SetActive(show);
+            if (!show) return;
+            reticle.position = AimPoint() + Vector3.up * 0.15f;
+            float pulse = 1f + Mathf.Sin(Time.time * 6f) * 0.05f;
+            reticle.localScale = Vector3.one * Balance.LadleRadius * 2f * pulse;
+        }
+
         void UpdateVisual()
         {
+            UpdateReticle();
             if (visual == null) return;
             float dt = Time.deltaTime;
             float spd;
