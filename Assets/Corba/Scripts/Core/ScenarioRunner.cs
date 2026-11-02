@@ -36,6 +36,7 @@ namespace Corba
             float duration = parts.Length > 1 && float.TryParse(parts[1], out var d) ? d : 30f;
             float interval = parts.Length > 2 && float.TryParse(parts[2], out var i) ? i : 5f;
             Time.timeScale = parts.Length > 3 && float.TryParse(parts[3], out var ts) ? ts : 1f;
+            if (parts.Length > 4) Loc.Set(parts[4] == "tr" ? Language.Turkish : Language.English);
 
             yield return new WaitForSecondsRealtime(1.5f);
             if (mode == "export")

@@ -20,7 +20,13 @@ namespace Corba
         public UnitInfo Info => GameData.Unit(Kind.Value);
         public Vector3 WorldPosition => CorbaMap.Instance.SampleRoad(Distance.Value, Lateral.Value);
 
-        float hitFlash, lastHp;
+        static readonly Color HitColor = new Color(1f, 0.96f, 0.9f);
+        static readonly Color HealColor = GameData.Hex("8CFF8A");
+        const UnitStatus Buffs = UnitStatus.Fortified | UnitStatus.Hasted | UnitStatus.Immune | UnitStatus.Rallied;
+
+        float flash, lastHp, healTally, healTimer;
+        Color flashColor = Color.white;
+        UnitStatus lastFlags;
         Transform visual;
         Renderer[] renderers;
         HealthBar bar;
@@ -42,9 +48,10 @@ namespace Corba
             visual.Pop(0.1f, 0.5f);
             FX.Dust(transform.position);
             FX.Dust(transform.position);
-            bar = HealthBar.Create(transform, 1.6f * info.Scale + 0.4f, 0.9f);
+            bar = HealthBar.Create(transform, 1.6f * info.Scale + 0.55f, 1.05f);
             bobPhase = Random.value * 10f;
             lastHp = Hp.Value;
+            lastFlags = Flags.Value;
             transform.position = WorldPosition;
             if (Kind.Value == UnitId.Cloud) visual.localPosition = Vector3.up * 0.8f;
         }
@@ -58,8 +65,26 @@ namespace Corba
                 FX.Splash(transform.position + Vector3.up * 0.6f, c, 16);
                 FX.Puff(transform.position + Vector3.up * 0.5f, GameData.Hex("F4ECD8"));
                 FX.Splat(transform.position, c, 1.4f * Info.Scale);
-                FX.PopText(transform.position + Vector3.up * 2f, "poof!", GameData.Hex("FFF4DC"), 0.8f);
+                FX.PopText(transform.position + Vector3.up * 2f, Loc.T("fx.poof"), GameData.Hex("FFF4DC"), 0.8f);
             }
+            if (bar != null) Destroy(bar.gameObject);
+            Art.SetFlash(renderers, 0.9f, HitColor);
+            Art.Vanish(visual, 0.25f);
+        }
+
+        void Flash(Color c, float amount)
+        {
+            if (amount < flash && flashColor == HitColor) return;
+            flashColor = c;
+            flash = Mathf.Max(flash, amount);
+        }
+
+        static Color BuffColor(UnitStatus gained)
+        {
+            if ((gained & UnitStatus.Fortified) != 0) return GameData.Soup(SoupType.Mercimek).Identity;
+            if ((gained & UnitStatus.Hasted) != 0) return GameData.Soup(SoupType.Ezogelin).Identity;
+            if ((gained & UnitStatus.Immune) != 0) return GameData.Soup(SoupType.Iskembe).Identity;
+            return GameData.Hex("FFE48A");
         }
 
         public void MarkBite() => reachedEnd = true;
@@ -86,6 +111,17 @@ namespace Corba
             shownTint = want;
             Art.Tint(visual.gameObject, want == Color.clear ? Color.white : want, want == Color.clear ? 0f : 0.35f);
             if (want != Color.clear) Tween.Punch(visual, 0.2f, 0.3f);
+        }
+
+        void UpdateBuffFlash(UnitStatus f)
+        {
+            var gained = f & ~lastFlags & Buffs;
+            lastFlags = f;
+            if (gained == 0) return;
+            var c = BuffColor(gained);
+            Flash(Color.Lerp(c, Color.white, 0.35f), 0.75f);
+            Tween.Punch(visual, 0.25f, 0.35f);
+            for (int i = 0; i < 4; i++) FX.Sparkle(transform.position + Vector3.up * (0.6f + i * 0.3f), c);
         }
 
         void ClientVisual(float dt)
@@ -126,14 +162,15 @@ namespace Corba
             if (Hp.Value < lastHp - 0.5f)
             {
                 damageTally += lastHp - Hp.Value;
-                if (hitFlash < 0.3f)
+                if (flash < 0.3f || flashColor != HitColor)
                 {
                     animator.Trigger("Hit", 1.5f);
                     Tween.Squash(visual, 0.18f, 0.25f);
                     Tween.LocalMove(visual, new Vector3(0, visual.localPosition.y, -0.18f), 0.06f, Ease.OutQuad)
                         .OnDone(() => { if (visual) Tween.LocalMove(visual, new Vector3(0, visual.localPosition.y, 0f), 0.2f, Ease.OutBack); });
                 }
-                hitFlash = 1f;
+                flashColor = HitColor;
+                flash = 1f;
             }
             damageTimer -= dt;
             if (damageTimer <= 0f && damageTally >= 6f)
@@ -150,11 +187,24 @@ namespace Corba
                 FX.Dust(transform.position);
             }
             UpdateBuffTint(f);
-            if (Hp.Value > lastHp + 20f) FX.Sparkle(transform.position + Vector3.up * 1.2f, GameData.Hex("BFF2D0"));
+            UpdateBuffFlash(f);
+            if (Hp.Value > lastHp + 0.5f) healTally += Hp.Value - lastHp;
+            healTimer -= dt;
+            if (healTally >= 6f && healTimer <= 0f)
+            {
+                Flash(HealColor, 0.7f);
+                Tween.Punch(visual, 0.12f, 0.3f);
+                FX.Sparkle(transform.position + Vector3.up * 1.2f, GameData.Hex("BFF2D0"));
+                FX.Sparkle(transform.position + Vector3.up * 0.7f, GameData.Hex("BFF2D0"));
+                FX.PopText(transform.position + Vector3.up * (1.8f * Info.Scale + 0.3f), "+" + Mathf.RoundToInt(healTally), HealColor, 0.7f);
+                healTally = 0f;
+                healTimer = 0.45f;
+            }
             lastHp = Hp.Value;
-            hitFlash = Mathf.MoveTowards(hitFlash, 0f, dt * 6f);
-            Art.SetFloat(renderers, "_Flash", hitFlash * 0.7f);
-            bar.Set(Hp.Value / Balance.UnitMaxHp(Kind.Value), GameData.Soup(Info.Soup).Identity);
+            flash = Mathf.MoveTowards(flash, 0f, dt * 5f);
+            Art.SetFlash(renderers, flash * 0.85f, flashColor);
+            bar.Set(Hp.Value / Balance.UnitMaxHp(Kind.Value));
+            if (flash > 0.5f && flashColor != HitColor) bar.Flash(flashColor);
 
             Vector3 p = transform.position;
             if ((f & UnitStatus.Burning) != 0 && Random.value < dt * 12f) FX.Ember(p + Vector3.up * 1f);

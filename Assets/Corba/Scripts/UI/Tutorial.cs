@@ -12,7 +12,7 @@ namespace Corba
 
         class Step
         {
-            public string Text;
+            public string Key;
             public Func<bool> Done;
             public float MinTime;
         }
@@ -37,9 +37,19 @@ namespace Corba
             var chip = Panel(card, "ui_chip", new Vector2(0f, 1f), new Vector2(40, -24), new Vector2(230, 44), new Vector2(0f, 1f), Gold).rectTransform;
             title = Text(chip, "", 20, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 1), new Vector2(210, 36), true, false);
             body = Text(card, "", 23, Ink, TextAnchor.UpperLeft, new Vector2(0.5f, 1f), new Vector2(0, -126), new Vector2(450, 100), false, false);
-            Button(card, "Skip", new Vector2(1f, 1f), new Vector2(-84, -46), new Vector2(110, 46), Skip, 20);
+            Button(card, "", new Vector2(1f, 1f), new Vector2(-84, -46), new Vector2(110, 46), Skip, 20).Bind("tut.skip");
             card.gameObject.SetActive(false);
             marker = new GameObject("ObjectiveMarker").AddComponent<WorldMarker>();
+            Loc.Changed += RefreshStep;
+        }
+
+        void OnDestroy() => Loc.Changed -= RefreshStep;
+
+        void RefreshStep()
+        {
+            if (steps == null || index >= steps.Count) return;
+            title.text = Loc.F("tut.title", index + 1, steps.Count);
+            body.text = Loc.T(steps[index].Key);
         }
 
         void Skip()
@@ -109,7 +119,7 @@ namespace Corba
                 if (index >= steps.Count)
                 {
                     if (d.Half.Value == 1) PlayerPrefs.SetInt(DoneKey, 1);
-                    CorbaUI.Instance.Flash("Nice! The timer is running now.");
+                    CorbaUI.Instance.Flash(Loc.T("flash.tutorialDone"));
                     Finish();
                     return;
                 }
@@ -119,8 +129,7 @@ namespace Corba
 
         void ShowStep()
         {
-            title.text = $"Tutorial {index + 1} / {steps.Count}";
-            body.text = steps[index].Text;
+            RefreshStep();
             Tween.Punch(card, 0.08f, 0.4f);
             body.transform.Pop(0.85f, 0.3f);
         }
@@ -129,11 +138,11 @@ namespace Corba
         {
             return new List<Step>
             {
-                new Step { Text = "Welcome, cook! You <b>defend</b> the Sofra first.\nMove with <b>WASD</b>.", Done = () => CorbaMap.FlatDist(me.transform.position, startPos) > 3f, MinTime = 1f },
-                new Step { Text = "Soups boil in big cauldrons at your <b>KITCHEN</b>. Follow the arrow and press <b>E</b> at one.", Done = () => me.Soup.Value >= 0 },
-                new Step { Text = "Easy now! Sudden starts, turns, sprinting and cliff drops <b>spill</b> soup. Watch the bowl in the bottom-left.", Done = () => true, MinTime = 5f },
-                new Step { Text = "Carry the soup to a glowing <b>pad</b> by the road and press <b>1</b> or <b>2</b>. Golden ▲ pads on high ground get +25% range.", Done = () => DefenceBuild.All.Count > 0 },
-                new Step { Text = "Each soup builds different towers. Mix them up, then let the raid begin!", Done = () => true, MinTime = 4f },
+                new Step { Key = "tut.d1", Done = () => CorbaMap.FlatDist(me.transform.position, startPos) > 3f, MinTime = 1f },
+                new Step { Key = "tut.d2", Done = () => me.Soup.Value >= 0 },
+                new Step { Key = "tut.d3", Done = () => true, MinTime = 5f },
+                new Step { Key = "tut.d4", Done = () => DefenceBuild.All.Count > 0 },
+                new Step { Key = "tut.d5", Done = () => true, MinTime = 4f },
             };
         }
 
@@ -148,10 +157,10 @@ namespace Corba
             };
             return new List<Step>
             {
-                new Step { Text = "Now you <b>attack</b>! Fill your pot at the <b>MARKET</b> cauldrons.", Done = () => me.Soup.Value >= 0 },
-                new Step { Text = "Carry it carefully to the <b>OCAK</b> and pour it in with <b>E</b>.", Done = () => bank() > 0 },
-                new Step { Text = "Banked soup buys raiders. Click the cards or press <b>1–0</b>. They march when the raid starts.", Done = () => d.Queued.Value > 0 },
-                new Step { Text = "Tip: press <b>Q</b> next to your rival to elbow them and make them spill!", Done = () => true, MinTime = 4f },
+                new Step { Key = "tut.a1", Done = () => me.Soup.Value >= 0 },
+                new Step { Key = "tut.a2", Done = () => bank() > 0 },
+                new Step { Key = "tut.a3", Done = () => d.Queued.Value > 0 },
+                new Step { Key = "tut.a4", Done = () => true, MinTime = 4f },
             };
         }
     }

@@ -24,9 +24,10 @@ namespace Corba
         bool menuShown, hudShown, resultShown;
 
         // HUD
-        RectTransform versus, objectiveCard, sofraCard, potCard, abilityCard, promptPill, recruitBar, buildBar, announcer;
-        Text potRole;
-        Image potGlyph;
+        RectTransform versus, objectiveCard, sofraCard, potCard, abilityCard, promptPill, bottomSlot, recruitBar, buildBar, announcer;
+        Text potRole, spillWarn;
+        Image potGlyph, potRim;
+        float spillPulse;
         Text timerText, phaseText, courseText, hostScore, guestScore, hostName, guestName, objectiveRole, objectiveText, sofraText, potName, potAmount, spillText, promptText, announcerText, queueText, shoveKey;
         Image phaseRibbon, objectiveChip, sofraFill, potFill, sloshDot, shoveFill, edgeArrow;
         readonly Image[] hostStars = new Image[2], guestStars = new Image[2];
@@ -77,7 +78,8 @@ namespace Corba
             var scaler = cgo.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
+            // Expand keeps the whole 1920x1080 reference area on screen at any aspect ratio.
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
             cgo.AddComponent<GraphicRaycaster>();
             Root = (RectTransform)cgo.transform;
 
@@ -102,15 +104,15 @@ namespace Corba
 
             var title = Panel(menuRoot, "ui_banner", new Vector2(0.5f, 1f), new Vector2(0, -150), new Vector2(900, 230)).rectTransform;
             Text(title, "ÇORBA", 120, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 24), new Vector2(820, 140), true);
-            Text(title, "Kepçe Savaşları", 40, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, -62), new Vector2(820, 56), true);
+            Text(title, "", 40, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, -62), new Vector2(820, 56), true).Bind("menu.subtitle");
             title.gameObject.AddComponent<Bobber>().Amount = 6f;
 
             var panel = Panel(menuRoot, "ui_panel", new Vector2(0.5f, 0.5f), new Vector2(0, -105), new Vector2(640, 600)).rectTransform;
-            Text(panel, "Carry soup. Spill less. Feed your army.", 26, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -62), new Vector2(540, 40), false, false);
+            Text(panel, "", 26, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -62), new Vector2(540, 40), false, false).Bind("menu.tagline");
 
             var buttons = new List<RectTransform>();
-            buttons.Add(Button(panel, "Play vs AI", new Vector2(0.5f, 1f), new Vector2(0, -140), new Vector2(460, 92), OnVsAi, 40, GameData.Hex("FFD9A0")).GetComponent<RectTransform>());
-            buttons.Add(Button(panel, "Host Online", new Vector2(0.5f, 1f), new Vector2(-118, -244), new Vector2(226, 76), OnHost, 26).GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(0, -140), new Vector2(460, 92), OnVsAi, 40, GameData.Hex("FFD9A0")).Bind("menu.playAi").GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(-118, -244), new Vector2(226, 76), OnHost, 26).Bind("menu.host").GetComponent<RectTransform>());
 
             var ipRt = Rect("IP", panel, new Vector2(0.5f, 1f), new Vector2(118, -228), new Vector2(226, 44));
             var ipImg = Image(ipRt, "ui_field", Color.white, true);
@@ -124,20 +126,22 @@ namespace Corba
             ipField.placeholder = ph;
             ipField.text = "127.0.0.1";
             buttons.Add(ipRt);
-            buttons.Add(Button(panel, "Join", new Vector2(0.5f, 1f), new Vector2(118, -282), new Vector2(226, 56), OnJoin, 24).GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -282), new Vector2(226, 56), OnJoin, 24).Bind("menu.join").GetComponent<RectTransform>());
 
-            buttons.Add(Button(panel, "Practice", new Vector2(0.5f, 1f), new Vector2(-118, -350), new Vector2(226, 70), OnSolo, 26).GetComponent<RectTransform>());
-            buttons.Add(Button(panel, "Watch AI vs AI", new Vector2(0.5f, 1f), new Vector2(118, -350), new Vector2(226, 70), OnAiVsAi, 22).GetComponent<RectTransform>());
-            buttons.Add(Button(panel, "How to Play", new Vector2(0.5f, 1f), new Vector2(-118, -440), new Vector2(226, 70), ShowHelp, 24).GetComponent<RectTransform>());
-            buttons.Add(Button(panel, "Quit", new Vector2(0.5f, 1f), new Vector2(118, -440), new Vector2(226, 70), Application.Quit, 24).GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(-118, -350), new Vector2(226, 70), OnSolo, 26).Bind("menu.practice").GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -350), new Vector2(226, 70), OnAiVsAi, 22).Bind("menu.watch").GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(-118, -440), new Vector2(226, 70), ShowHelp, 24).Bind("menu.help").GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -440), new Vector2(226, 70), Application.Quit, 24).Bind("menu.quit").GetComponent<RectTransform>());
             menuStatus = Text(panel, "", 22, GameData.Hex("9C2F1C"), TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 50), new Vector2(560, 40), false, false);
 
-            Text(menuRoot, "Netcode for GameObjects • port " + CorbaBootstrap.Port, 18, Cream, TextAnchor.LowerRight, new Vector2(1, 0), new Vector2(-190, 26), new Vector2(360, 30));
+            Text(menuRoot, "", 18, Cream, TextAnchor.LowerRight, new Vector2(1, 0), new Vector2(-190, 26), new Vector2(360, 30)).Bind(() => Loc.F("menu.netInfo", CorbaBootstrap.Port));
+            var lang = Button(menuRoot, "", new Vector2(1f, 1f), new Vector2(-180, -62), new Vector2(300, 66), Loc.Cycle, 24, GameData.Hex("C9E3F2")).Bind("lang.button");
 
             menuIntro = () =>
             {
                 SlideIn(title, new Vector2(0, 420), 0f, 0.8f);
                 SlideIn(panel, new Vector2(0, -900), 0.15f, 0.7f);
+                SlideIn((RectTransform)lang.transform, new Vector2(420, 0), 0.3f, 0.6f);
                 for (int i = 0; i < buttons.Count; i++) buttons[i].Pop(0.2f, 0.45f);
             };
         }
@@ -148,12 +152,12 @@ namespace Corba
         {
             lobbyRoot = Stretch("Lobby", Root);
             var panel = Panel(lobbyRoot, "ui_panel", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 440)).rectTransform;
-            Text(panel, "The Kitchen", 54, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -74), new Vector2(600, 80), true);
+            Text(panel, "", 54, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -74), new Vector2(600, 80), true).Bind("lobby.title");
             lobbyText = Text(panel, "", 30, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -150), new Vector2(600, 44), false, false);
             lobbyHint = Text(panel, "", 22, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -196), new Vector2(600, 40), false, false);
-            startButton = Button(panel, "Start Match (Bo3)", new Vector2(0.5f, 0f), new Vector2(0, 180), new Vector2(440, 80), () => MatchDirector.Instance?.StartMatchRpc(false), 30);
-            soloButton = Button(panel, "Start Solo", new Vector2(0.5f, 0f), new Vector2(-115, 80), new Vector2(220, 68), () => MatchDirector.Instance?.StartMatchRpc(true), 24);
-            Button(panel, "Leave", new Vector2(0.5f, 0f), new Vector2(115, 80), new Vector2(220, 68), OnLeave, 24);
+            startButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(0, 180), new Vector2(440, 80), () => MatchDirector.Instance?.StartMatchRpc(false), 30).Bind("lobby.start");
+            soloButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(-115, 80), new Vector2(220, 68), () => MatchDirector.Instance?.StartMatchRpc(true), 24).Bind("lobby.solo");
+            Button(panel, "", new Vector2(0.5f, 0f), new Vector2(115, 80), new Vector2(220, 68), OnLeave, 24).Bind("lobby.leave");
         }
 
         #endregion
@@ -181,7 +185,7 @@ namespace Corba
 
             sofraCard = Rect("Sofra", hudRoot, new Vector2(1f, 1f), new Vector2(-18, -18), new Vector2(400, 104), new Vector2(1f, 1f));
             Image(sofraCard, "ui_panel_dark", Color.white);
-            Text(sofraCard, "Sofra hunger", 24, Gold, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(130, -32), new Vector2(220, 34), true);
+            Text(sofraCard, "", 24, Gold, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(130, -32), new Vector2(220, 34), true).Bind("hud.sofra");
             sofraText = Text(sofraCard, "", 22, Cream, TextAnchor.MiddleRight, new Vector2(1f, 1f), new Vector2(-90, -32), new Vector2(150, 34));
             var bar = Panel(sofraCard, "ui_bar_frame", new Vector2(0.5f, 0f), new Vector2(0, 32), new Vector2(350, 32)).rectTransform;
             sofraFill = Panel(bar, "ui_bar_fill", new Vector2(0f, 0.5f), new Vector2(6, 0), new Vector2(338, 20), new Vector2(0f, 0.5f), GameData.Hex("E8962E"));
@@ -195,14 +199,16 @@ namespace Corba
             potFill.type = UnityEngine.UI.Image.Type.Filled;
             potFill.fillMethod = UnityEngine.UI.Image.FillMethod.Vertical;
             potFill.preserveAspect = false;
-            Panel(bowl, "ui_bowl_rim", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(146, 146));
+            potRim = Panel(bowl, "ui_bowl_rim", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(146, 146));
             sloshDot = Panel(bowl, "ui_badge", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(26, 26));
             potGlyph = Panel(potCard, "glyph_shield", new Vector2(0f, 1f), new Vector2(196, -42), new Vector2(40, 40));
             potName = Text(potCard, "", 26, Gold, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(312, -42), new Vector2(180, 36), true);
             potAmount = Text(potCard, "", 40, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(282, -92), new Vector2(220, 50), true);
             spillText = Text(potCard, "", 16, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 1f), new Vector2(282, -140), new Vector2(220, 40));
             potRole = Text(potCard, "", 17, Cream, TextAnchor.MiddleLeft, new Vector2(0.5f, 0f), new Vector2(0, 32), new Vector2(380, 44));
-            Button(hudRoot, "Soup Book [B]", new Vector2(0f, 1f), new Vector2(150, -196), new Vector2(240, 52), () => SoupBook.Instance?.Toggle(), 20);
+            spillWarn = Text(potCard, "", 30, GameData.Hex("FF6A4A"), TextAnchor.MiddleCenter, new Vector2(0f, 1f), new Vector2(92, 8), new Vector2(240, 44), true).Bind("hud.spilling");
+            spillWarn.gameObject.SetActive(false);
+            Button(hudRoot, "", new Vector2(0f, 1f), new Vector2(150, -196), new Vector2(240, 52), () => SoupBook.Instance?.Toggle(), 20).Bind("hud.soupBook");
 
             abilityCard = Rect("Abilities", hudRoot, new Vector2(1f, 0f), new Vector2(-18, 18), new Vector2(150, 196), new Vector2(1f, 0f));
             Image(abilityCard, "ui_panel_dark", Color.white);
@@ -212,12 +218,13 @@ namespace Corba
             shoveFill.fillMethod = UnityEngine.UI.Image.FillMethod.Radial360;
             shoveFill.preserveAspect = false;
             shoveKey = Text(shove, "Q", 40, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 4), new Vector2(90, 60), true, false);
-            Text(abilityCard, "Dirsek\n<size=14>elbow rival</size>", 20, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 38), new Vector2(140, 50));
+            Text(abilityCard, "", 20, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 38), new Vector2(140, 50)).Bind("hud.elbow");
 
             promptPill = Rect("Prompt", hudRoot, new Vector2(0.5f, 0f), new Vector2(0, 236), new Vector2(720, 66));
             Image(promptPill, "ui_panel", Color.white);
             promptText = Text(promptPill, "", 26, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 2), new Vector2(680, 50), false, false);
 
+            bottomSlot = Rect("BottomSlot", hudRoot, new Vector2(0.5f, 0f), Vector2.zero, new Vector2(1180, 220), new Vector2(0.5f, 0f));
             BuildRecruitBar();
             BuildBuildBar();
 
@@ -241,7 +248,7 @@ namespace Corba
             var card = Panel(parent, "ui_panel_dark", new Vector2(0.5f, 1f), new Vector2(x, -10), new Vector2(320, 112), new Vector2(0.5f, 1f)).rectTransform;
             var portrait = Panel(card, "ui_badge", new Vector2(host ? 0f : 1f, 0.5f), new Vector2(dir * 60, 0), new Vector2(88, 88), null, host ? HostColor : GuestColor).rectTransform;
             Panel(portrait, host ? "icon_chef_a" : "icon_chef_b", new Vector2(0.5f, 0.5f), new Vector2(0, -2), new Vector2(78, 78));
-            var name = Text(card, host ? "Host" : "Guest", 22, host ? GameData.Hex("FFB8A0") : GameData.Hex("A8CCF0"), align, anchorSide, new Vector2(dir * 172, -32), new Vector2(120, 30), true);
+            var name = Text(card, "", 22, host ? GameData.Hex("FFB8A0") : GameData.Hex("A8CCF0"), align, anchorSide, new Vector2(dir * 172, -32), new Vector2(120, 30), true);
             var score = Text(card, "0", 22, Cream, align, anchorSide, new Vector2(dir * 172, -74), new Vector2(120, 32), true);
             var stars = host ? hostStars : guestStars;
             for (int i = 0; i < 2; i++)
@@ -251,7 +258,7 @@ namespace Corba
 
         void BuildRecruitBar()
         {
-            recruitBar = Rect("Recruit", hudRoot, new Vector2(0.5f, 0f), new Vector2(-10, 14), new Vector2(1180, 206), new Vector2(0.5f, 0f));
+            recruitBar = Rect("Recruit", bottomSlot, new Vector2(0.5f, 0f), new Vector2(0, 14), new Vector2(1180, 206), new Vector2(0.5f, 0f));
             Image(recruitBar, "ui_panel_dark", Color.white);
             for (int s = 0; s < 5; s++)
             {
@@ -274,10 +281,11 @@ namespace Corba
                     Panel(rt, "icon_" + info.Model, new Vector2(0.5f, 1f), new Vector2(0, -46), new Vector2(80, 80));
                     var costText = Text(rt, info.Cost.ToString(), 22, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 30), new Vector2(90, 28), true);
                     Text(rt, ((idx + 1) % 10).ToString(), 16, Gold, TextAnchor.MiddleCenter, new Vector2(0f, 1f), new Vector2(16, -14), new Vector2(26, 22));
-                    Text(rt, ShortName(info.Name), 13, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(96, 18));
+                    var unitId = info.Id;
+                    Text(rt, "", 13, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(96, 18)).Bind(() => Loc.UnitShort(unitId));
                     var shade = Image(Stretch("Shade", rt), "ui_card", new Color(0.1f, 0.06f, 0.04f, 0.6f));
                     var tip = rt.gameObject.AddComponent<Tooltip>();
-                    tip.Text = $"<b>{info.Name}</b>  <i>{info.English}</i>\n{info.Blurb}\nHP {info.Hp} • Speed {info.Speed} • Bite {info.Bite}";
+                    tip.Source = () => $"<b>{Loc.UnitName(unitId)}</b>\n{Loc.UnitBlurb(unitId)}\n{Loc.F("recruit.stats", Mathf.RoundToInt(Balance.UnitMaxHp(unitId)), info.Speed, info.Bite)}";
                     rt.gameObject.AddComponent<JuicyButton>();
                     cards.Add(new RecruitCard { Id = info.Id, Button = btn, Rt = rt, Shade = shade, Cost = costText });
                 }
@@ -285,15 +293,9 @@ namespace Corba
             queueText = Text(recruitBar, "", 18, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, 18), new Vector2(620, 28));
         }
 
-        static string ShortName(string n)
-        {
-            int space = n.IndexOf(' ');
-            return space > 0 ? n.Substring(0, space) : n;
-        }
-
         void BuildBuildBar()
         {
-            buildBar = Rect("Build", hudRoot, new Vector2(0.5f, 0f), new Vector2(0, 14), new Vector2(860, 200), new Vector2(0.5f, 0f));
+            buildBar = Rect("Build", bottomSlot, new Vector2(0.5f, 0f), new Vector2(0, 14), new Vector2(860, 200), new Vector2(0.5f, 0f));
             for (int i = 0; i < 2; i++)
             {
                 var card = Rect("Option", buildBar, new Vector2(0.5f, 0.5f), new Vector2(i == 0 ? -218 : 218, 0), new Vector2(420, 190));
@@ -301,9 +303,7 @@ namespace Corba
                 var key = Panel(card, "ui_badge", new Vector2(0f, 1f), new Vector2(26, -26), new Vector2(46, 46), null, Gold).rectTransform;
                 Text(key, (i + 1).ToString(), 26, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 2), new Vector2(40, 40), true, false);
                 buildIcons[i] = Panel(card, "ui_badge", new Vector2(0f, 0.5f), new Vector2(100, -4), new Vector2(150, 150));
-                buildTexts[i] = Text(card, "", 19, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 0.5f), new Vector2(298, 0), new Vector2(230, 170));
-                buildTexts[i].verticalOverflow = VerticalWrapMode.Overflow;
-                buildTexts[i].resizeTextForBestFit = false;
+                buildTexts[i] = Text(card, "", 19, Cream, TextAnchor.MiddleLeft, new Vector2(0f, 0.5f), new Vector2(298, 0), new Vector2(232, 172));
                 buildCards[i] = card;
             }
         }
@@ -317,9 +317,9 @@ namespace Corba
             var panel = Panel(resultRoot, "ui_panel", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(820, 500)).rectTransform;
             resultTitle = Text(panel, "", 70, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -96), new Vector2(760, 110), true);
             resultBody = Text(panel, "", 26, Ink, TextAnchor.UpperCenter, new Vector2(0.5f, 1f), new Vector2(0, -262), new Vector2(700, 200), false, false);
-            resultButton = Button(panel, "Back to Menu", new Vector2(0.5f, 0f), new Vector2(-150, 80), new Vector2(280, 80), OnResultButton, 28);
+            resultButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(-150, 80), new Vector2(280, 80), OnResultButton, 28);
             resultButtonText = resultButton.GetComponentInChildren<Text>();
-            Button(panel, "Main Menu", new Vector2(0.5f, 0f), new Vector2(150, 80), new Vector2(280, 80), OnLeave, 28);
+            Button(panel, "", new Vector2(0.5f, 0f), new Vector2(150, 80), new Vector2(280, 80), OnLeave, 28).Bind("result.mainMenu");
         }
 
         void BuildHelp()
@@ -327,18 +327,9 @@ namespace Corba
             helpRoot = Stretch("Help", Root);
             Image(Stretch("Dim", helpRoot), "ui_vignette", new Color(1, 1, 1, 0.94f), true);
             var panel = Panel(helpRoot, "ui_panel", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1120, 800)).rectTransform;
-            Text(panel, "How to Play", 54, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -70), new Vector2(900, 80), true);
-            var body = Text(panel,
-                "<b>Soup is your money, and it spills.</b>\n\n" +
-                "<b>WASD</b> move • <b>Shift</b> sprint (sloshes more) • <b>E</b> fill / pour / upgrade • <b>Q</b> elbow your rival • <b>Tab</b> this help\n\n" +
-                "<b>Defender</b>: fill at your KITCHEN, carry soup to a glowing pad and press <b>1</b> or <b>2</b>. Golden ▲ pads are high ground: +25% range. Pour the same soup on a build to upgrade it.\n\n" +
-                "<b>Attacker</b>: fill at the MARKET, pour it into the OCAK, then recruit raiders with the cards or keys <b>1–0</b>. They march when the raid starts.\n\n" +
-                "<b>Terrain</b>: cliffs block you, ramps and stairs connect the terraces. Jumping off a ledge is a shortcut, but the landing sloshes soup. Rocks and roots jolt the pot, and mud slows you.\n\n" +
-                "Best of 3 courses. Each course you attack once and defend once. The bigger raid wins.",
-                23, Ink, TextAnchor.UpperLeft, new Vector2(0.5f, 1f), new Vector2(0, -410), new Vector2(1000, 580), false, false);
-            body.verticalOverflow = VerticalWrapMode.Overflow;
-            body.resizeTextForBestFit = false;
-            Button(panel, "Got it", new Vector2(0.5f, 0f), new Vector2(0, 70), new Vector2(260, 76), () => helpRoot.gameObject.SetActive(false), 28);
+            Text(panel, "", 54, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -70), new Vector2(900, 80), true).Bind("help.title");
+            Text(panel, "", 23, Ink, TextAnchor.UpperLeft, new Vector2(0.5f, 1f), new Vector2(0, -410), new Vector2(1000, 580), false, false).Bind("help.body");
+            Button(panel, "", new Vector2(0.5f, 0f), new Vector2(0, 70), new Vector2(260, 76), () => helpRoot.gameObject.SetActive(false), 28).Bind("help.ok");
             helpRoot.gameObject.SetActive(false);
         }
 
@@ -352,28 +343,28 @@ namespace Corba
 
         void OnHost()
         {
-            if (!CorbaBootstrap.Instance.Host(GameMode.Online)) ShowMenu("Could not open the kitchen (port in use?)");
+            if (!CorbaBootstrap.Instance.Host(GameMode.Online)) ShowMenu(Loc.T("menu.errHost"));
         }
 
         void OnVsAi()
         {
-            if (!CorbaBootstrap.Instance.Host(GameMode.VsAi)) ShowMenu("Could not start the match.");
+            if (!CorbaBootstrap.Instance.Host(GameMode.VsAi)) ShowMenu(Loc.T("menu.errStart"));
         }
 
         void OnAiVsAi()
         {
-            if (!CorbaBootstrap.Instance.Host(GameMode.AiVsAi)) ShowMenu("Could not start the match.");
+            if (!CorbaBootstrap.Instance.Host(GameMode.AiVsAi)) ShowMenu(Loc.T("menu.errStart"));
         }
 
         void OnSolo()
         {
-            if (!CorbaBootstrap.Instance.Host(GameMode.Solo)) ShowMenu("Could not start the match.");
+            if (!CorbaBootstrap.Instance.Host(GameMode.Solo)) ShowMenu(Loc.T("menu.errStart"));
         }
 
         void OnJoin()
         {
-            if (!CorbaBootstrap.Instance.Join(ipField.text)) ShowMenu("Could not start client.");
-            else menuStatus.text = "Knocking on the kitchen door...";
+            if (!CorbaBootstrap.Instance.Join(ipField.text)) ShowMenu(Loc.T("menu.errClient"));
+            else menuStatus.text = Loc.T("menu.knocking");
         }
 
         void OnLeave()
@@ -425,7 +416,10 @@ namespace Corba
         {
             var rt = Rect("Toast", toastRoot, new Vector2(0.5f, 1f), new Vector2(0, 30), new Vector2(760, 46));
             Image(rt, "ui_chip", new Color(0.24f, 0.15f, 0.09f, 0.85f));
-            Text(rt, msg, 24, c, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 2), new Vector2(740, 40), true);
+            var label = Text(rt, msg, 24, c, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 2), new Vector2(740, 40), true);
+            float w = Mathf.Clamp(label.preferredWidth + 60f, 280f, 780f);
+            rt.sizeDelta = new Vector2(w, 46);
+            label.rectTransform.sizeDelta = new Vector2(w - 20f, 40);
             var g = Group(rt.gameObject);
             g.alpha = 0f;
             Tween.Fade(g, 1f, 0.25f);
@@ -455,7 +449,7 @@ namespace Corba
                 menuRoot.gameObject.SetActive(showMenu);
                 if (showMenu) menuIntro?.Invoke();
             }
-            if (online && !hasDirector) menuStatus.text = "Connecting...";
+            if (online && !hasDirector) menuStatus.text = Loc.T("menu.connecting");
 
             lobbyRoot.gameObject.SetActive(hasDirector && phase == MatchPhase.Lobby);
             bool showHud = hasDirector && phase != MatchPhase.Lobby;
@@ -516,11 +510,11 @@ namespace Corba
 
         void UpdateLobby(MatchDirector d)
         {
-            lobbyText.text = $"Cooks in the kitchen: {d.PlayerCount.Value} / 2";
+            lobbyText.text = Loc.F("lobby.cooks", d.PlayerCount.Value);
             bool host = CorbaBootstrap.IsHost;
             lobbyHint.text = host
-                ? (d.PlayerCount.Value < 2 ? "Waiting for a rival to join on port " + CorbaBootstrap.Port + "..." : "Your rival is here. Start when ready!")
-                : "Waiting for the host to start...";
+                ? (d.PlayerCount.Value < 2 ? Loc.F("lobby.waitRival", CorbaBootstrap.Port) : Loc.T("lobby.rivalHere"))
+                : Loc.T("lobby.waitHost");
             startButton.gameObject.SetActive(host);
             soloButton.gameObject.SetActive(host);
             startButton.interactable = d.PlayerCount.Value >= 2;
@@ -542,9 +536,9 @@ namespace Corba
             if (phase != lastPhase || halfKey != lastHalfKey)
             {
                 if (phase == MatchPhase.Prep)
-                    Announce(spectator ? $"Course {d.Course.Value + 1}" : defender ? "DEFEND!" : "ATTACK!", defender ? DefendColor : AttackColor);
-                else if (phase == MatchPhase.Raid) Announce("RAID!", GameData.Hex("FFB040"));
-                else if (phase == MatchPhase.HalfResult) Announce("Half over", Cream);
+                    Announce(spectator ? Loc.F("announce.course", d.Course.Value + 1) : Loc.T(defender ? "announce.defend" : "announce.attack"), defender ? DefendColor : AttackColor);
+                else if (phase == MatchPhase.Raid) Announce(Loc.T("announce.raid"), GameData.Hex("FFB040"));
+                else if (phase == MatchPhase.HalfResult) Announce(Loc.T("announce.half"), Cream);
                 Tween.Punch(versus, 0.08f, 0.5f);
                 if (defender != lastDefender || halfKey != lastHalfKey)
                 {
@@ -555,13 +549,13 @@ namespace Corba
                 lastHalfKey = halfKey;
             }
 
-            courseText.text = $"Course {d.Course.Value + 1}/3";
+            courseText.text = Loc.F("hud.course", d.Course.Value + 1);
             phaseText.text = phase switch
             {
-                MatchPhase.Prep => "Prep",
-                MatchPhase.Raid => "Raid!",
-                MatchPhase.HalfResult => "Half over",
-                MatchPhase.MatchOver => "Final",
+                MatchPhase.Prep => Loc.T("phase.prep"),
+                MatchPhase.Raid => Loc.T("phase.raid"),
+                MatchPhase.HalfResult => Loc.T("phase.half"),
+                MatchPhase.MatchOver => Loc.T("phase.final"),
                 _ => "",
             };
             phaseRibbon.color = phase == MatchPhase.Raid ? GameData.Hex("C9452E") : phase == MatchPhase.Prep ? GameData.Hex("D49A35") : GameData.Hex("8A7A62");
@@ -575,10 +569,10 @@ namespace Corba
                 lastSecond = sec;
             }
 
-            hostName.text = mySlot == 0 && !spectator ? "You" : d.IsBotSlot(0) ? "AI Cook" : "Host";
-            guestName.text = mySlot == 1 && !spectator ? "You" : d.IsBotSlot(1) ? "AI Cook" : "Guest";
-            hostScore.text = $"<size=15>RAID</size> {d.ScoreA.Value}";
-            guestScore.text = $"{d.ScoreB.Value} <size=15>RAID</size>";
+            hostName.text = Loc.T(mySlot == 0 && !spectator ? "name.you" : d.IsBotSlot(0) ? "name.ai" : "name.host");
+            guestName.text = Loc.T(mySlot == 1 && !spectator ? "name.you" : d.IsBotSlot(1) ? "name.ai" : "name.guest");
+            hostScore.text = $"<size=15>{Loc.T("hud.raid")}</size> {d.ScoreA.Value}";
+            guestScore.text = $"{d.ScoreB.Value} <size=15>{Loc.T("hud.raid")}</size>";
             for (int i = 0; i < 2; i++)
             {
                 hostStars[i].color = i < d.WinsA.Value ? Color.white : new Color(0.3f, 0.22f, 0.16f, 0.8f);
@@ -595,7 +589,7 @@ namespace Corba
             sofraText.text = $"{Mathf.CeilToInt(d.Hunger.Value)} / {GameData.SofraHunger:0}";
 
             objectiveChip.color = spectator ? GameData.Hex("8A7A62") : defender ? DefendColor : AttackColor;
-            objectiveRole.text = spectator ? "SPECTATING" : defender ? "DEFEND" : "ATTACK";
+            objectiveRole.text = Loc.T(spectator ? "role.spectating" : defender ? "role.defend" : "role.attack");
             UpdateObjective(d, me, defender, spectator);
 
             potCard.gameObject.SetActive(!spectator);
@@ -606,6 +600,9 @@ namespace Corba
             if (me != null && promptText.text != me.Prompt)
             {
                 promptText.text = me.Prompt;
+                float w = Mathf.Clamp(promptText.preferredWidth + 70f, 360f, 1100f);
+                promptPill.sizeDelta = new Vector2(w, promptPill.sizeDelta.y);
+                promptText.rectTransform.sizeDelta = new Vector2(w - 40f, promptText.rectTransform.sizeDelta.y);
                 if (!string.IsNullOrEmpty(me.Prompt)) promptPill.Pop(0.7f, 0.3f);
             }
 
@@ -625,7 +622,21 @@ namespace Corba
             }
             if (attacking) UpdateRecruit(d, mySlot);
 
+            LayoutBottomSlot();
             UpdateEdgeArrow();
+        }
+
+        /// <summary>Centres the recruit/build bars in the gap between the pot and ability cards, shrinking them when the gap is too narrow.</summary>
+        void LayoutBottomSlot()
+        {
+            const float margin = 14f;
+            float width = Root.rect.width;
+            float left = potCard.gameObject.activeSelf ? 18f + potCard.rect.width + margin : margin;
+            float right = width - (abilityCard.gameObject.activeSelf ? 18f + abilityCard.rect.width + margin : margin);
+            float room = Mathf.Max(100f, right - left);
+            float k = Mathf.Min(1f, room / bottomSlot.rect.width);
+            bottomSlot.localScale = new Vector3(k, k, 1f);
+            bottomSlot.anchoredPosition = new Vector2((left + right) * 0.5f - width * 0.5f, 0f);
         }
 
         void UpdatePot(MatchDirector d, ChefController me, int mySlot)
@@ -637,9 +648,9 @@ namespace Corba
             shownFill = Mathf.Lerp(shownFill, has ? fill : 0f, 1f - Mathf.Exp(-10f * Time.deltaTime));
             potFill.fillAmount = shownFill / cap;
             potFill.color = has ? GameData.Soup((SoupType)me.Soup.Value).Liquid : Color.clear;
-            potName.text = has ? GameData.Soup((SoupType)me.Soup.Value).Name : "Empty pot";
+            potName.text = has ? Loc.SoupName((SoupType)me.Soup.Value) : Loc.T("pot.empty");
             potGlyph.gameObject.SetActive(has);
-            potRole.text = has ? RoleLine(d, (SoupType)me.Soup.Value, d.IsDefender(mySlot)) : "Fill your pot at a cauldron. <b>[B]</b> Soup Book";
+            potRole.text = has ? RoleLine(d, (SoupType)me.Soup.Value, d.IsDefender(mySlot)) : Loc.T("pot.hint");
             if (has)
             {
                 var info = GameData.Soup((SoupType)me.Soup.Value);
@@ -650,7 +661,8 @@ namespace Corba
             else potName.color = Gold;
             potAmount.text = has ? $"{Mathf.RoundToInt(shownFill)}<size=22>/{cap:0}</size>" : "-";
             float spilled = mySlot == 0 ? d.SpillA.Value : d.SpillB.Value;
-            spillText.text = $"Spilled: {Mathf.RoundToInt(spilled)}" + ((d.BonusMask.Value & (1 << mySlot)) != 0 ? "\n<color=#F2B33D>Annenin Eli +15%</color>" : "");
+            spillText.text = Loc.F("pot.spilled", Mathf.RoundToInt(spilled)) + ((d.BonusMask.Value & (1 << mySlot)) != 0 ? $"\n<color=#F2B33D>{Loc.T("pot.bonus")}</color>" : "");
+            UpdateSpillWarning(me.IsSpilling && has);
             Vector2 s = me.SloshVector;
             sloshDot.rectTransform.anchoredPosition = Vector2.ClampMagnitude(s, 1.4f) * 48f;
             sloshDot.color = s.magnitude > GameData.SloshRim ? GameData.Hex("D9442B") : s.magnitude > 0.7f ? GameData.Hex("F2B33D") : GameData.Hex("8FD19E");
@@ -658,24 +670,30 @@ namespace Corba
             shoveFill.fillAmount = me.ShoveCooldown01;
         }
 
+        void UpdateSpillWarning(bool spilling)
+        {
+            if (spilling && !spillWarn.gameObject.activeSelf)
+            {
+                spillWarn.gameObject.SetActive(true);
+                spillWarn.transform.Pop(1.6f, 0.3f);
+                Tween.Shake(potCard, 10f, 0.35f);
+            }
+            spillPulse = spilling ? 1f : Mathf.MoveTowards(spillPulse, 0f, Time.deltaTime * 3f);
+            if (!spilling && spillPulse <= 0f) spillWarn.gameObject.SetActive(false);
+            float wobble = 0.5f + 0.5f * Mathf.Sin(Time.time * 22f);
+            potRim.color = Color.Lerp(Color.white, GameData.Hex("FF4A2A"), spillPulse * (0.55f + 0.45f * wobble));
+            spillWarn.color = new Color(1f, 0.42f + 0.3f * wobble, 0.29f, spillPulse);
+        }
+
         static string RoleLine(MatchDirector d, SoupType soup, bool defender)
         {
             var info = GameData.Soup(soup);
-            string kw = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(info.Identity, Color.white, 0.3f))}><b>{info.Keyword}</b></color>";
+            string kw = $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(info.Identity, Color.white, 0.3f))}><b>{Loc.SoupKeyword(soup)}</b></color>";
             if (defender)
-            {
-                var a = GameData.Defence(GameData.DefenceOption(soup, 0));
-                var b = GameData.Defence(GameData.DefenceOption(soup, 1));
-                return $"{kw} \u2022 builds {a.English} or {b.English}";
-            }
+                return Loc.F("role.builds", kw, Loc.DefenceName(GameData.DefenceOption(soup, 0)), Loc.DefenceName(GameData.DefenceOption(soup, 1)));
             if (d.Phase.Value == MatchPhase.Raid)
-            {
-                var l = Balance.Ladles[(int)soup];
-                return $"{kw} \u2022 bank it, or throw [R]: {l.Name}, {l.Blurb.ToLowerInvariant()}";
-            }
-            var u = GameData.Unit(GameData.UnitOption(soup, 0));
-            var v = GameData.Unit(GameData.UnitOption(soup, 1));
-            return $"{kw} \u2022 bank it for {u.English} or {v.English}";
+                return Loc.F("role.ladle", kw, Loc.LadleName((int)soup), Loc.LadleBlurb((int)soup));
+            return Loc.F("role.recruit", kw, Loc.UnitName(GameData.UnitOption(soup, 0)), Loc.UnitName(GameData.UnitOption(soup, 1)));
         }
 
         void UpdateBuildBar(ChefController me)
@@ -688,8 +706,8 @@ namespace Corba
                 buildIcons[i].sprite = sprite != null ? sprite : Art.Sprite("ui_badge");
                 int cost = MatchDirector.Instance.BuildCost(info.Id);
                 bool afford = me.DisplayFill + 0.01f >= cost;
-                string repeat = cost > info.Cost ? " <size=15>(repeat +)</size>" : "";
-                buildTexts[i].text = $"<size=24><color=#F2B33D>{info.Name}</color></size>\n<i>{info.English}</i> • {info.Kind}\n{info.Blurb}\n<color={(afford ? "#B8F0B0" : "#FF9A80")}><b>Cost {cost}</b></color>{repeat}";
+                string repeat = cost > info.Cost ? $" <size=15>{Loc.T("build.repeat")}</size>" : "";
+                buildTexts[i].text = $"<size=24><color=#F2B33D>{Loc.DefenceName(info.Id)}</color></size>\n<i>{Loc.DefenceKindName(info.Kind)}</i>\n{Loc.DefenceBlurb(info.Id)}\n<color={(afford ? "#B8F0B0" : "#FF9A80")}><b>{Loc.F("build.cost", cost)}</b></color>{repeat}";
                 buildCards[i].GetComponent<Image>().color = afford ? Color.white : new Color(0.7f, 0.6f, 0.6f);
             }
         }
@@ -699,7 +717,7 @@ namespace Corba
             for (int s = 0; s < 5; s++)
             {
                 int bank = d.BankOf(mySlot, (SoupType)s);
-                bankTexts[s].text = $"{GameData.Soups[s].Name}  <color=#FFE6A0>{bank}</color>";
+                bankTexts[s].text = $"{Loc.SoupName((SoupType)s)}  <color=#FFE6A0>{bank}</color>";
                 if (bank > lastBank[s]) Tween.Punch(bankChips[s], 0.25f, 0.45f);
                 lastBank[s] = bank;
             }
@@ -724,9 +742,9 @@ namespace Corba
             }
             string wave = d.Queued.Value > 0
                 ? (d.Phase.Value == MatchPhase.Raid
-                    ? $"Wave: {d.Queued.Value} ready  [G] send  • auto in {Mathf.Max(0, Mathf.CeilToInt((float)(d.WaveAutoAt.Value - MatchDirector.Now)))}s"
-                    : $"Wave: {d.Queued.Value} ready • marches at raid start")
-                : d.Marching.Value > 0 ? $"{d.Marching.Value} raiders marching" : "Recruit raiders, then send them as a wave";
+                    ? Loc.F("wave.raidReady", d.Queued.Value, Mathf.Max(0, Mathf.CeilToInt((float)(d.WaveAutoAt.Value - MatchDirector.Now))))
+                    : Loc.F("wave.prepReady", d.Queued.Value))
+                : d.Marching.Value > 0 ? Loc.F("wave.marching", d.Marching.Value) : Loc.T("wave.hint");
             queueText.text = wave;
         }
 
@@ -735,19 +753,19 @@ namespace Corba
             ObjectiveTarget = null;
             var map = CorbaMap.Instance;
             string text;
-            if (spectator) text = "Two AI cooks fight it out. Watch how they carry and counter.";
-            else if (!d.InPlay) text = d.Phase.Value == MatchPhase.HalfResult ? "Swapping sides..." : "";
+            if (spectator) text = Loc.T("obj.spectate");
+            else if (!d.InPlay) text = d.Phase.Value == MatchPhase.HalfResult ? Loc.T("obj.swapping") : "";
             else if (defender)
             {
                 if (me.Soup.Value < 0)
                 {
-                    text = "Fill your pot at the <b>KITCHEN</b> (E).";
+                    text = Loc.T("obj.fillKitchen");
                     var st = Nearest(me, StationKind.DefenderCauldron);
                     ObjectiveTarget = st?.Position;
                 }
                 else
                 {
-                    text = "Carry it to a glowing <b>pad</b>, then press <b>1</b>/<b>2</b>. Golden ▲ = high ground.";
+                    text = Loc.T("obj.carryPad");
                     BuildPad best = null;
                     float bd = float.MaxValue;
                     foreach (var p in map.Pads)
@@ -758,7 +776,7 @@ namespace Corba
                     }
                     ObjectiveTarget = best?.TowerPosition;
                 }
-                if (d.Phase.Value == MatchPhase.Raid) text = "<color=#9C2F1C>Raid!</color> " + text;
+                if (d.Phase.Value == MatchPhase.Raid) text = Loc.T("obj.raid") + text;
             }
             else
             {
@@ -766,15 +784,15 @@ namespace Corba
                 for (int s = 0; s < 5; s++) bank += d.BankOf(me.Slot.Value, (SoupType)s);
                 if (me.Soup.Value < 0)
                 {
-                    text = "Fill your pot at the <b>MARKET</b> (E).";
+                    text = Loc.T("obj.fillMarket");
                     ObjectiveTarget = Nearest(me, StationKind.AttackerCauldron)?.Position;
                 }
                 else
                 {
-                    text = "Pour it into the <b>OCAK</b> (E).";
+                    text = Loc.T("obj.pour");
                     ObjectiveTarget = map.Ocak.Position;
                 }
-                if (bank >= 15) text += " Recruit raiders: <b>1–0</b>.";
+                if (bank >= 15) text += Loc.T("obj.recruit");
             }
             if (objectiveText.text != text)
             {
@@ -841,13 +859,13 @@ namespace Corba
             var me = ChefController.Local;
             int mySlot = me != null ? me.Slot.Value : 0;
             bool won = d.Winner.Value == mySlot;
-            resultTitle.text = me == null ? (d.Winner.Value == 0 ? "Host AI wins!" : "Guest AI wins!") : won ? "Afiyet Olsun!" : "Ellerine Sağlık...";
+            resultTitle.text = Loc.T(me == null ? (d.Winner.Value == 0 ? "result.hostAi" : "result.guestAi") : won ? "result.win" : "result.lose");
             resultTitle.color = won || me == null ? Gold : GameData.Hex("C9B79C");
-            resultBody.text = (me == null ? "" : won ? "<b>You win the match!</b>" : "<b>Your rival wins the match.</b>") +
-                              $"\n\nCourses: Host {d.WinsA.Value} – {d.WinsB.Value} Guest" +
-                              $"\nLast course raid: Host {d.ScoreA.Value} – {d.ScoreB.Value} Guest" +
-                              $"\nSoup spilled: Host {Mathf.RoundToInt(d.SpillA.Value)} – {Mathf.RoundToInt(d.SpillB.Value)} Guest";
-            resultButtonText.text = CorbaBootstrap.IsHost ? "Rematch" : "Leave";
+            resultBody.text = (me == null ? "" : Loc.T(won ? "result.youWin" : "result.rivalWins")) +
+                              "\n\n" + Loc.F("result.courses", d.WinsA.Value, d.WinsB.Value) +
+                              "\n" + Loc.F("result.lastRaid", d.ScoreA.Value, d.ScoreB.Value) +
+                              "\n" + Loc.F("result.spilled", Mathf.RoundToInt(d.SpillA.Value), Mathf.RoundToInt(d.SpillB.Value));
+            resultButtonText.text = Loc.T(CorbaBootstrap.IsHost ? "result.rematch" : "result.leave");
         }
     }
 
@@ -865,22 +883,28 @@ namespace Corba
 
     public class Tooltip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     {
-        public string Text;
+        public System.Func<string> Source;
         static RectTransform box;
         static Text label;
 
         public void OnPointerEnter(PointerEventData e)
         {
+            var root = CorbaUI.Instance.Root;
             if (box == null)
             {
-                var root = CorbaUI.Instance.Root;
                 box = UIKit.Rect("Tooltip", root, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(420, 120), new Vector2(0.5f, 0f));
                 UIKit.Image(box, "ui_panel", Color.white);
                 label = UIKit.Text(box, "", 19, UIKit.Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(380, 96), false, false);
             }
-            label.text = Text;
+            label.text = Source != null ? Source() : "";
             box.gameObject.SetActive(true);
             box.position = transform.position + new Vector3(0, ((RectTransform)transform).rect.height * 0.5f * transform.lossyScale.y + 10f, 0);
+            Vector2 local = root.InverseTransformPoint(box.position);
+            var area = root.rect;
+            float half = box.rect.width * 0.5f + 12f;
+            local.x = Mathf.Clamp(local.x, area.xMin + half, area.xMax - half);
+            local.y = Mathf.Min(local.y, area.yMax - box.rect.height - 12f);
+            box.position = root.TransformPoint(local);
             box.SetAsLastSibling();
             box.Pop(0.7f, 0.25f);
         }

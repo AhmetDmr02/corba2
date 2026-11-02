@@ -49,7 +49,7 @@ namespace Corba
                 go.AddComponent<AudioListener>();
             }
             cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = GameData.Hex("BFD8E0");
+            cam.backgroundColor = GameData.Hex("C7D6D9");
             cam.fieldOfView = 45f;
             cam.nearClipPlane = 0.3f;
             cam.farClipPlane = 260f;
@@ -76,11 +76,6 @@ namespace Corba
             RenderSettings.ambientSkyColor = GameData.Hex("B9D3E8");
             RenderSettings.ambientEquatorColor = GameData.Hex("C9C3A0");
             RenderSettings.ambientGroundColor = GameData.Hex("6E6250");
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogColor = GameData.Hex("C9DDE0");
-            RenderSettings.fogStartDistance = 60f;
-            RenderSettings.fogEndDistance = 170f;
         }
 
         void SetupNetwork()
@@ -103,9 +98,9 @@ namespace Corba
             {
                 response.Approved = network.ConnectedClientsIds.Count < 2;
                 response.CreatePlayerObject = false;
-                if (!response.Approved) response.Reason = "The kitchen is full.";
+                if (!response.Approved) response.Reason = Loc.T("net.full");
             };
-            network.OnClientStopped += _ => CorbaUI.Instance?.ShowMenu("Disconnected.");
+            network.OnClientStopped += _ => CorbaUI.Instance?.ShowMenu(Loc.T("menu.disconnected"));
         }
 
         void SetupEventSystem()

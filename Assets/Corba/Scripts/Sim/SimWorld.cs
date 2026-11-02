@@ -105,6 +105,8 @@ namespace Corba.Sim
         public float MaxHp => Info.Hp * (Info.Kind == DefenceKind.Blocker ? StatMult : 1f);
         public bool Damageable => Info.Kind != DefenceKind.Trap;
         public bool Disabled(float now) => now < DisabledUntil;
+        public float RearmTime => RearmAt;
+        public float DisabledEnd => DisabledUntil;
         public float Range => Info.Range * (HighGround ? Balance.HighGroundRangeMult : 1f);
     }
 

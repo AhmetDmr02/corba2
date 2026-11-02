@@ -41,6 +41,7 @@ namespace Corba
         double shoveReadyAt;
         int insideBump = -1;
         float lastSeenFill;
+        float spillFxTally, spillTextTimer, spillEmit;
         Vector3 lastRemotePos;
         float remoteSpeed;
 
@@ -294,6 +295,7 @@ namespace Corba
                 float mult = GameData.Soup((SoupType)Soup.Value).SpillMult;
                 float amount = Mathf.Min((mag - GameData.SloshRim) * GameData.SpillRate * mult * dt, DisplayFill);
                 pendingSpill += amount;
+                spillFxTally += amount;
                 IsSpilling = true;
                 slosh *= 1f - Mathf.Clamp01(1.5f * dt);
             }
@@ -346,7 +348,8 @@ namespace Corba
             {
                 var info = GameData.Soup(nearest.Soup);
                 bool same = Soup.Value == (int)nearest.Soup;
-                Prompt = same ? $"[E] Top up {info.Name}" : Soup.Value >= 0 ? $"[E] Swap to {info.Name} (dumps your pot!)" : $"[E] Fill pot with {info.Name}";
+                string soupName = Loc.SoupName(nearest.Soup);
+                Prompt = same ? Loc.F("prompt.topUp", soupName) : Soup.Value >= 0 ? Loc.F("prompt.swap", soupName) : Loc.F("prompt.fill", soupName);
                 if (input.Interact) FillRpc(nearest.Index);
                 return;
             }
@@ -355,13 +358,12 @@ namespace Corba
             {
                 if (Soup.Value >= 0 && CorbaMap.FlatDist(transform.position, map.Ocak.Position) < GameData.InteractRange + 2f)
                 {
-                    Prompt = $"[E] Pour {Mathf.FloorToInt(DisplayFill)} ladles into the Ocak";
+                    Prompt = Loc.F("prompt.pour", Mathf.FloorToInt(DisplayFill));
                     if (input.Interact) PourRpc();
                 }
                 else if (Soup.Value >= 0 && director.Phase.Value == MatchPhase.Raid && DisplayFill >= Balance.LadleCost)
                 {
-                    var l = Balance.Ladles[Soup.Value];
-                    Prompt = $"[R] / Right-click: toss {l.Name} ladle ({Balance.LadleCost}) • {l.Blurb}";
+                    Prompt = Loc.F("prompt.ladle", Loc.LadleName(Soup.Value), Balance.LadleCost, Loc.LadleBlurb(Soup.Value));
                 }
                 return;
             }
@@ -381,16 +383,16 @@ namespace Corba
             if (existing != null)
             {
                 var info = existing.Info;
-                if (info.Soup != soup) { Prompt = $"Needs {GameData.Soup(info.Soup).Name} to upgrade"; return; }
-                if (existing.Level.Value >= GameData.MaxLevel) { Prompt = $"{info.Name} is max level"; return; }
+                if (info.Soup != soup) { Prompt = Loc.F("prompt.needs", Loc.SoupName(info.Soup)); return; }
+                if (existing.Level.Value >= GameData.MaxLevel) { Prompt = Loc.F("prompt.max", Loc.DefenceName(info.Id)); return; }
                 int cost = GameData.UpgradeCost(info.Id, existing.Level.Value);
-                Prompt = $"[E] Upgrade {info.Name} to Lv{existing.Level.Value + 1} ({cost})";
+                Prompt = Loc.F("prompt.upgrade", Loc.DefenceName(info.Id), existing.Level.Value + 1, cost);
                 if (input.Interact) BuildRpc(pad.Index, 0);
                 return;
             }
             var a = GameData.Defence(GameData.DefenceOption(soup, 0));
             var b = GameData.Defence(GameData.DefenceOption(soup, 1));
-            Prompt = $"[1] {a.Name} ({director.BuildCost(a.Id)})     [2] {b.Name} ({director.BuildCost(b.Id)})";
+            Prompt = Loc.F("prompt.build", Loc.DefenceName(a.Id), director.BuildCost(a.Id), Loc.DefenceName(b.Id), director.BuildCost(b.Id));
             if (input.Option1) BuildRpc(pad.Index, 0);
             else if (input.Option2) BuildRpc(pad.Index, 1);
         }
@@ -419,7 +421,7 @@ namespace Corba
         {
             if (code == 3)
             {
-                if (!IsBot.Value) CorbaUI.Instance?.Flash("Not enough soup in the pot!");
+                if (!IsBot.Value) CorbaUI.Instance?.Flash(Loc.T("flash.noSoup"));
                 return;
             }
             pendingSpill = 0f;
@@ -460,7 +462,7 @@ namespace Corba
             AddSloshImpulse(new Vector2(local.x, local.z).normalized * GameData.ShoveImpulse);
             if (!IsBot.Value)
             {
-                CorbaUI.Instance?.Flash("Dirsek! You got elbowed!");
+                CorbaUI.Instance?.Flash(Loc.T("flash.elbowed"));
                 CameraRig.Instance?.Shake(0.8f);
             }
             HitAnimRpc();
@@ -540,11 +542,33 @@ namespace Corba
                 potRoot.localRotation = Quaternion.Euler(-s.y * 6f, 0, s.x * 6f);
             }
 
-            bool spilling = IsOwner ? IsSpilling : Fill.Value < lastSeenFill - 0.05f && carrying;
+            float drop = lastSeenFill - Fill.Value;
+            // Remote cooks only expose their synced fill; small drops are spills, big ones are pours and builds.
+            bool remoteSpill = !IsOwner && carrying && drop > 0.05f && drop < 15f;
+            if (remoteSpill) spillFxTally += drop;
+            bool spilling = IsOwner ? IsSpilling : remoteSpill;
             if (Soup.Value >= 0 && Fill.Value > lastSeenFill + 5f) Tween.Punch(potRoot, 0.35f, 0.4f);
             lastSeenFill = Fill.Value;
-            if (spilling && carrying && Random.value < 0.6f)
-                FX.Drip(potRoot.position + Vector3.up * 0.3f, GameData.Soup((SoupType)Soup.Value).Liquid);
+            if (spilling && carrying) SpillFx(dt);
+            spillTextTimer -= dt;
+            if (spillTextTimer <= 0f && spillFxTally >= 1f && Soup.Value >= 0)
+            {
+                var liquid = GameData.Soup((SoupType)Soup.Value).Liquid;
+                FX.PopText(transform.position + Vector3.up * 2.7f, "-" + Mathf.RoundToInt(spillFxTally), Color.Lerp(liquid, Color.white, 0.25f), 0.9f);
+                spillFxTally = 0f;
+                spillTextTimer = 0.55f;
+            }
+        }
+
+        void SpillFx(float dt)
+        {
+            var liquid = GameData.Soup((SoupType)Soup.Value).Liquid;
+            Vector3 dir = IsOwner && slosh.sqrMagnitude > 0.01f
+                ? transform.TransformDirection(new Vector3(slosh.x, 0f, slosh.y)).normalized
+                : Quaternion.Euler(0, Random.Range(0f, 360f), 0) * Vector3.forward;
+            Vector3 lip = potRoot.position + Vector3.up * 0.35f + dir * 0.35f;
+            for (spillEmit += dt * 45f; spillEmit >= 1f; spillEmit -= 1f) FX.Spill(lip, dir, liquid);
+            potRoot.localRotation *= Quaternion.Euler(Random.Range(-5f, 5f), 0f, Random.Range(-5f, 5f));
         }
     }
 }

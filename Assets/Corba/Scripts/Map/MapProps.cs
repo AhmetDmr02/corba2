@@ -105,9 +105,9 @@ namespace Corba
 
     public class WorldLabel : MonoBehaviour
     {
-        public static WorldLabel Create(Transform parent, Vector3 pos, string title, string subtitle, Color color, string glyph = null, float fadeRange = 0f)
+        public static WorldLabel Create(Transform parent, Vector3 pos, System.Func<string> title, System.Func<string> subtitle, Color color, string glyph = null, float fadeRange = 0f)
         {
-            var go = new GameObject("Label_" + title);
+            var go = new GameObject("Label");
             go.transform.SetParent(parent, false);
             go.transform.position = pos;
             var canvas = go.AddComponent<Canvas>();
@@ -127,49 +127,75 @@ namespace Corba
             img.type = Image.Type.Sliced;
             img.color = color;
 
-            float textX = 0f;
+            var label = go.AddComponent<WorldLabel>();
             if (!string.IsNullOrEmpty(glyph))
             {
                 var icon = new GameObject("Glyph", typeof(RectTransform));
                 icon.transform.SetParent(go.transform, false);
-                var irt = (RectTransform)icon.transform;
-                irt.sizeDelta = new Vector2(86, 86);
-                irt.anchoredPosition = new Vector2(-122, 0);
+                label.glyph = (RectTransform)icon.transform;
+                label.glyph.sizeDelta = new Vector2(86, 86);
                 var iimg = icon.AddComponent<Image>();
                 iimg.sprite = Art.Sprite(glyph);
                 iimg.preserveAspect = true;
                 iimg.color = new Color(1f, 0.97f, 0.88f);
-                textX = 40f;
             }
-            AddText(go.transform, title, 50, new Vector2(textX, 16), new Color(1f, 0.97f, 0.88f), CorbaUI.TitleFont);
-            AddText(go.transform, subtitle, 24, new Vector2(textX, -34), new Color(1f, 0.93f, 0.8f), CorbaUI.BodyFont);
-            var label = go.AddComponent<WorldLabel>();
+            label.titleText = AddText(go.transform, 50, new Color(1f, 0.97f, 0.88f), CorbaUI.TitleFont);
+            label.subText = AddText(go.transform, 24, new Color(1f, 0.93f, 0.8f), CorbaUI.BodyFont);
+            label.title = title;
+            label.subtitle = subtitle;
+            label.Refresh();
+            Loc.Changed += label.Refresh;
             label.fadeRange = fadeRange;
             label.group = go.AddComponent<CanvasGroup>();
             if (fadeRange > 0f) label.group.alpha = 0f;
             return label;
         }
 
-        static void AddText(Transform parent, string s, int size, Vector2 pos, Color c, Font font)
+        static Text AddText(Transform parent, int size, Color c, Font font)
         {
             var go = new GameObject("T", typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var rt = (RectTransform)go.transform;
             rt.sizeDelta = new Vector2(360, 60);
-            rt.anchoredPosition = pos;
             var t = go.AddComponent<Text>();
             t.font = font;
             t.fontSize = size;
             t.fontStyle = FontStyle.Bold;
             t.alignment = TextAnchor.MiddleCenter;
             t.color = c;
-            t.text = s;
             t.horizontalOverflow = HorizontalWrapMode.Overflow;
             t.verticalOverflow = VerticalWrapMode.Overflow;
             var o = go.AddComponent<Outline>();
             o.effectColor = new Color(0.16f, 0.08f, 0.03f, 0.9f);
             o.effectDistance = new Vector2(2, -2);
+            return t;
         }
+
+        System.Func<string> title, subtitle;
+        Text titleText, subText;
+        RectTransform glyph;
+
+        /// <summary>Re-reads both lines and grows the chip so the longer one always sits inside it.</summary>
+        void Refresh()
+        {
+            titleText.text = title();
+            subText.text = subtitle();
+            float glyphRoom = glyph != null ? 100f : 0f;
+            float textWidth = Mathf.Max(titleText.preferredWidth, subText.preferredWidth);
+            float width = Mathf.Max(300f, textWidth + 64f + glyphRoom);
+            ((RectTransform)transform).sizeDelta = new Vector2(width, 120);
+            float textX = glyphRoom * 0.5f;
+            titleText.rectTransform.sizeDelta = subText.rectTransform.sizeDelta = new Vector2(textWidth + 20f, 60);
+            titleText.rectTransform.anchoredPosition = new Vector2(textX, 16);
+            subText.rectTransform.anchoredPosition = new Vector2(textX, -34);
+            if (glyph != null) glyph.anchoredPosition = new Vector2(-width * 0.5f + 64f, 0);
+        }
+
+        void OnDestroy() => Loc.Changed -= Refresh;
+
+        static WorldLabel focus, nextFocus;
+        static float nextFocusDist;
+        static int focusFrame;
 
         float t;
         float fadeRange;
@@ -182,8 +208,22 @@ namespace Corba
             t += Time.deltaTime;
             if (fadeRange > 0f)
             {
+                // Neighbouring cauldron labels overlap, so only the one nearest the local cook is shown (decided a frame late).
+                if (focusFrame != Time.frameCount)
+                {
+                    focusFrame = Time.frameCount;
+                    focus = nextFocus;
+                    nextFocus = null;
+                    nextFocusDist = float.MaxValue;
+                }
                 var me = ChefController.Local;
-                float target = me != null && CorbaMap.FlatDist(me.transform.position, transform.position) < fadeRange ? 1f : 0f;
+                float d = me != null ? CorbaMap.FlatDist(me.transform.position, transform.position) : float.MaxValue;
+                if (d < fadeRange && d < nextFocusDist)
+                {
+                    nextFocus = this;
+                    nextFocusDist = d;
+                }
+                float target = focus == this ? 1f : 0f;
                 group.alpha = Mathf.MoveTowards(group.alpha, target, Time.deltaTime * 4f);
                 if (group.alpha <= 0.001f) return;
             }

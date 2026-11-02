@@ -136,6 +136,30 @@ namespace Corba
             }
         }
 
+        public static void SetFlash(Renderer[] renderers, float amount, Color color)
+        {
+            block ??= new MaterialPropertyBlock();
+            foreach (var r in renderers)
+            {
+                if (r == null) continue;
+                r.GetPropertyBlock(block);
+                block.SetFloat("_Flash", amount);
+                block.SetColor("_FlashColor", color);
+                r.SetPropertyBlock(block);
+            }
+        }
+
+        /// <summary>Detaches a visual from its despawning owner and shrinks it away so removal reads as an event, not a pop.</summary>
+        public static void Vanish(Transform visual, float dur = 0.3f)
+        {
+            if (visual == null) return;
+            visual.SetParent(null, true);
+            Tween.KillAll(visual);
+            var spin = visual.rotation * Quaternion.Euler(0, Random.Range(-40f, 40f), Random.Range(-25f, 25f));
+            Tween.Rotate(visual, spin, dur, Ease.OutCubic);
+            Tween.Scale(visual, Vector3.zero, dur, Ease.InBack).OnDone(() => { if (visual) Object.Destroy(visual.gameObject); });
+        }
+
         public static Sprite Sprite(string name)
         {
             if (sprites.TryGetValue(name, out var s)) return s;

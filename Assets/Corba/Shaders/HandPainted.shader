@@ -5,7 +5,9 @@ Shader "Corba/HandPainted"
         _BaseMap ("Painted Albedo", 2D) = "white" {}
         _BaseColor ("Color", Color) = (1,1,1,1)
         _Tint ("Tint (rgb, a = strength)", Color) = (1,1,1,0)
-        _ShadeColor ("Shade Color", Color) = (0.62,0.58,0.78,1)
+        _ShadeColor ("Shade Color", Color) = (0.5,0.46,0.68,1)
+        _Contrast ("Albedo Contrast", Range(0.5,2)) = 1.18
+        _Saturation ("Albedo Saturation", Range(0,2)) = 1.05
         _LightInfluence ("Light Influence", Range(0,1)) = 0.55
         _Wrap ("Wrap", Range(0,1)) = 0.5
         _RimColor ("Rim Color", Color) = (1,0.95,0.8,1)
@@ -13,6 +15,7 @@ Shader "Corba/HandPainted"
         _VertexColorStrength ("Vertex Color Strength", Range(0,1)) = 0
         _Emission ("Emission", Range(0,1)) = 0
         _Flash ("Hit Flash", Range(0,1)) = 0
+        _FlashColor ("Flash Color", Color) = (1,0.92,0.85,1)
     }
 
     SubShader
@@ -27,6 +30,8 @@ Shader "Corba/HandPainted"
             half4 _BaseColor;
             half4 _Tint;
             half4 _ShadeColor;
+            half _Contrast;
+            half _Saturation;
             half _LightInfluence;
             half _Wrap;
             half4 _RimColor;
@@ -34,6 +39,7 @@ Shader "Corba/HandPainted"
             half _VertexColorStrength;
             half _Emission;
             half _Flash;
+            half4 _FlashColor;
         CBUFFER_END
 
         TEXTURE2D(_BaseMap);
@@ -98,6 +104,8 @@ Shader "Corba/HandPainted"
                 albedo.rgb *= lerp(half3(1,1,1), i.color.rgb * 1.6h, _VertexColorStrength);
 
                 half lum = dot(albedo.rgb, half3(0.299h, 0.587h, 0.114h));
+                albedo.rgb = lerp(lum.xxx, albedo.rgb, _Saturation);
+                albedo.rgb = saturate((albedo.rgb - 0.45h) * _Contrast + 0.45h);
                 albedo.rgb = lerp(albedo.rgb, _Tint.rgb * (lum * 1.35h + 0.15h), _Tint.a);
 
                 half3 n = normalize(i.normalWS);
@@ -119,7 +127,7 @@ Shader "Corba/HandPainted"
                 half rim = pow(1.0h - saturate(dot(n, viewDir)), 3.0h) * saturate(n.y * 0.5h + 0.6h);
                 color += _RimColor.rgb * rim * _RimStrength;
                 color = lerp(color, albedo.rgb * 1.25h, _Emission);
-                color = lerp(color, half3(1, 0.92h, 0.85h), _Flash);
+                color = lerp(color, _FlashColor.rgb, _Flash);
 
                 color = MixFog(color, i.fog);
                 return half4(color, 1);

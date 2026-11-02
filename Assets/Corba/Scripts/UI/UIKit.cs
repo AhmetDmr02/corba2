@@ -99,7 +99,7 @@ namespace Corba
 
         public static Button Button(Transform parent, string label, Vector2 anchor, Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick, int fontSize = 32, Color? tint = null)
         {
-            var rt = Rect("Button_" + label, parent, anchor, pos, size);
+            var rt = Rect("Button", parent, anchor, pos, size);
             var img = Image(rt, "ui_button", tint ?? Color.white, true);
             var b = rt.gameObject.AddComponent<Button>();
             b.targetGraphic = img;
@@ -107,6 +107,22 @@ namespace Corba
             b.onClick.AddListener(onClick);
             Text(rt, label, fontSize, Cream, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0, 4), size - new Vector2(28, 14), true);
             rt.gameObject.AddComponent<JuicyButton>();
+            return b;
+        }
+
+        public static Text Bind(this Text t, string key) => LocText.Bind(t, () => Loc.T(key));
+
+        public static Text Bind(this Text t, System.Func<string> source) => LocText.Bind(t, source);
+
+        public static Button Bind(this Button b, string key)
+        {
+            b.GetComponentInChildren<Text>().Bind(key);
+            return b;
+        }
+
+        public static Button Bind(this Button b, System.Func<string> source)
+        {
+            b.GetComponentInChildren<Text>().Bind(source);
             return b;
         }
 

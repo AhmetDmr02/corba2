@@ -17,6 +17,7 @@ namespace Corba
             public float Size, EndSize;
             public Color Color;
             public bool Flat;
+            public bool FadeIn;
             public bool Active;
         }
 
@@ -107,10 +108,11 @@ namespace Corba
             p.Active = true;
             p.T.gameObject.SetActive(true);
             p.Flat = false;
+            p.FadeIn = false;
             return p;
         }
 
-        static void Emit(string tex, Vector3 pos, Vector3 vel, float gravity, float life, float size, float endSize, Color c, bool flat = false)
+        static Particle Emit(string tex, Vector3 pos, Vector3 vel, float gravity, float life, float size, float endSize, Color c, bool flat = false)
         {
             var p = Instance.Get(tex);
             p.T.position = pos;
@@ -121,6 +123,7 @@ namespace Corba
             p.EndSize = endSize;
             p.Color = c;
             p.Flat = flat;
+            return p;
         }
 
         public static void Splash(Vector3 pos, Color c, int count)
@@ -142,10 +145,27 @@ namespace Corba
                 Emit("fx_splat", hit.point + Vector3.up * 0.08f, Vector3.zero, 0f, 6f, Random.Range(0.4f, 0.7f), 0.5f, new Color(c.r, c.g, c.b, 0.85f), true);
         }
 
+        /// <summary>Soup flung over the pot rim: a thick arcing blob that leaves a puddle where it lands.</summary>
+        public static void Spill(Vector3 pos, Vector3 dir, Color c)
+        {
+            var v = dir * Random.Range(1.8f, 3.2f) + Vector3.up * Random.Range(1.5f, 2.8f) + Random.insideUnitSphere * 0.6f;
+            Emit("fx_blob", pos, v, 14f, Random.Range(0.4f, 0.6f), Random.Range(0.22f, 0.36f), 0.1f, c);
+            if (Random.value < 0.25f && Physics.Raycast(pos + dir * 0.7f, Vector3.down, out var hit, 5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                Emit("fx_splat", hit.point + Vector3.up * 0.08f, Vector3.zero, 0f, 6f, Random.Range(0.5f, 0.8f), Random.Range(0.9f, 1.3f), new Color(c.r, c.g, c.b, 0.92f), true);
+        }
+
         public static void Mote(Vector3 pos)
         {
             var c = new Color(1f, 0.93f, 0.7f, 0.55f);
             Emit("fx_blob", pos, new Vector3(Random.Range(-0.3f, 0.3f), Random.Range(0.05f, 0.25f), Random.Range(-0.3f, 0.3f)), -0.02f, Random.Range(4f, 7f), 0.09f, 0.05f, c);
+        }
+
+        /// <summary>Low drifting haze puff that fades in and out, used to thicken the air near the ground.</summary>
+        public static void Mist(Vector3 pos)
+        {
+            var c = new Color(0.93f, 0.95f, 0.96f, 0.16f);
+            var v = new Vector3(Random.Range(0.15f, 0.45f), 0.02f, Random.Range(-0.15f, 0.15f));
+            Emit("fx_puff", pos, v, 0f, Random.Range(6f, 9f), Random.Range(3.5f, 5f), Random.Range(6f, 8f), c).FadeIn = true;
         }
 
         public static void Splat(Vector3 pos, Color c, float size)
@@ -262,7 +282,7 @@ namespace Corba
                 p.T.localScale = Vector3.one * Mathf.Lerp(p.Size, p.EndSize, k);
                 p.T.rotation = p.Flat ? Quaternion.Euler(90f, 0, 0) : face;
                 var c = p.Color;
-                c.a *= p.Flat ? Mathf.Clamp01(p.Life / Mathf.Min(1.2f, p.MaxLife)) : 1f - k * k;
+                c.a *= p.FadeIn ? Mathf.Sin(k * Mathf.PI) : p.Flat ? Mathf.Clamp01(p.Life / Mathf.Min(1.2f, p.MaxLife)) : 1f - k * k;
                 block.SetColor("_BaseColor", c);
                 p.R.SetPropertyBlock(block);
             }
@@ -313,14 +333,27 @@ namespace Corba
         }
     }
 
+    /// <summary>
+    /// Camera-facing bar above a unit or build: a health fill with a lagging damage trail, and an optional thin timer strip
+    /// underneath for re-arm or disable countdowns.
+    /// </summary>
     public class HealthBar : MonoBehaviour
     {
-        Transform fill;
-        MeshRenderer fillRenderer;
-        MaterialPropertyBlock block;
-        float width;
+        static readonly Color Frame = new Color(0.16f, 0.09f, 0.05f, 0.92f);
+        static readonly Color Trail = new Color(1f, 0.94f, 0.78f, 0.95f);
+        static readonly Color Full = GameData.Hex("7FD45A");
+        static readonly Color Half = GameData.Hex("F2C53D");
+        static readonly Color Low = GameData.Hex("E5432B");
 
-        public static HealthBar Create(Transform parent, float height, float width)
+        MaterialPropertyBlock block;
+        Transform fill, trail, timerFill, bars;
+        MeshRenderer fillR, trailR, timerR;
+        GameObject healthRoot, timerRoot;
+        float width, shown = 1f, trailFrac = 1f, trailHold, flash;
+        Color flashColor;
+        bool hasValue;
+
+        public static HealthBar Create(Transform parent, float height, float width, bool health = true)
         {
             var go = new GameObject("HealthBar");
             go.transform.SetParent(parent, false);
@@ -328,42 +361,105 @@ namespace Corba
             var hb = go.AddComponent<HealthBar>();
             hb.width = width;
             hb.block = new MaterialPropertyBlock();
+            hb.bars = new GameObject("Bars").transform;
+            hb.bars.SetParent(go.transform, false);
 
-            var bg = new GameObject("bg");
-            bg.transform.SetParent(go.transform, false);
-            bg.transform.localScale = new Vector3(width + 0.12f, 0.24f, 1f);
-            bg.AddComponent<MeshFilter>().sharedMesh = FX.Quad;
-            var bgr = bg.AddComponent<MeshRenderer>();
-            bgr.sharedMaterial = FX.Mat("ui_bar_world");
-            bgr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            var b = new MaterialPropertyBlock();
-            b.SetColor("_BaseColor", new Color(0.24f, 0.15f, 0.1f, 0.9f));
-            bgr.SetPropertyBlock(b);
+            hb.healthRoot = new GameObject("Health");
+            hb.healthRoot.transform.SetParent(hb.bars, false);
+            hb.Quad(hb.healthRoot.transform, new Vector3(width + 0.14f, 0.3f, 1f), Vector3.zero, Frame);
+            hb.trail = hb.Quad(hb.healthRoot.transform, new Vector3(width, 0.18f, 1f), new Vector3(0, 0, -0.02f), Trail, out hb.trailR);
+            hb.fill = hb.Quad(hb.healthRoot.transform, new Vector3(width, 0.18f, 1f), new Vector3(0, 0, -0.04f), Full, out hb.fillR);
+            hb.healthRoot.SetActive(health);
 
-            var f = new GameObject("fill");
-            f.transform.SetParent(go.transform, false);
-            f.transform.localPosition = new Vector3(0, 0, -0.01f);
-            f.AddComponent<MeshFilter>().sharedMesh = FX.Quad;
-            hb.fillRenderer = f.AddComponent<MeshRenderer>();
-            hb.fillRenderer.sharedMaterial = FX.Mat("ui_bar_world");
-            hb.fillRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            hb.fill = f.transform;
-            hb.Set(1f, Color.green);
+            hb.timerRoot = new GameObject("Timer");
+            hb.timerRoot.transform.SetParent(hb.bars, false);
+            hb.timerRoot.transform.localPosition = new Vector3(0, health ? -0.24f : 0f, 0);
+            hb.Quad(hb.timerRoot.transform, new Vector3(width + 0.1f, 0.16f, 1f), Vector3.zero, Frame);
+            hb.timerFill = hb.Quad(hb.timerRoot.transform, new Vector3(width, 0.08f, 1f), new Vector3(0, 0, -0.04f), Color.white, out hb.timerR);
+            hb.timerRoot.SetActive(false);
             return hb;
         }
 
-        public void Set(float frac, Color c)
+        Transform Quad(Transform parent, Vector3 scale, Vector3 pos, Color c) => Quad(parent, scale, pos, c, out _);
+
+        Transform Quad(Transform parent, Vector3 scale, Vector3 pos, Color c, out MeshRenderer r)
+        {
+            var q = new GameObject("q");
+            q.transform.SetParent(parent, false);
+            q.transform.localPosition = pos;
+            q.transform.localScale = scale;
+            q.AddComponent<MeshFilter>().sharedMesh = FX.Quad;
+            r = q.AddComponent<MeshRenderer>();
+            r.sharedMaterial = FX.Mat("ui_bar_world");
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            Paint(r, c);
+            return q.transform;
+        }
+
+        void Paint(MeshRenderer r, Color c)
+        {
+            block.SetColor("_BaseColor", c);
+            r.SetPropertyBlock(block);
+        }
+
+        static void Stretch(Transform t, float width, float frac, float z)
+        {
+            var s = t.localScale;
+            t.localScale = new Vector3(Mathf.Max(0.0001f, width * frac), s.y, 1f);
+            t.localPosition = new Vector3(-width * (1f - frac) * 0.5f, 0f, z);
+        }
+
+        public void Set(float frac)
         {
             frac = Mathf.Clamp01(frac);
-            fill.localScale = new Vector3(width * frac, 0.16f, 1f);
-            fill.localPosition = new Vector3(-width * (1f - frac) * 0.5f, 0, -0.01f);
-            block.SetColor("_BaseColor", Color.Lerp(GameData.Hex("D9442B"), c, frac));
-            fillRenderer.SetPropertyBlock(block);
-            gameObject.SetActive(frac < 0.995f);
+            if (!hasValue)
+            {
+                hasValue = true;
+                shown = trailFrac = frac;
+            }
+            if (frac < shown - 0.001f)
+            {
+                trailHold = 0.4f;
+                Tween.Punch(bars, 0.18f, 0.25f);
+            }
+            else if (frac > shown + 0.01f) Flash(GameData.Hex("C8FFB0"));
+            shown = frac;
+        }
+
+        /// <summary>Timer strip: fraction of the countdown already elapsed, or negative to hide it.</summary>
+        public void SetTimer(float frac, Color c)
+        {
+            bool show = frac >= 0f;
+            if (timerRoot.activeSelf != show)
+            {
+                timerRoot.SetActive(show);
+                if (show) timerRoot.transform.Pop(0.3f, 0.3f);
+            }
+            if (!show) return;
+            Stretch(timerFill, width, Mathf.Clamp01(frac), -0.04f);
+            Paint(timerR, c);
+        }
+
+        public void Flash(Color c)
+        {
+            flash = 1f;
+            flashColor = c;
         }
 
         void LateUpdate()
         {
+            float dt = Time.deltaTime;
+            trailHold -= dt;
+            if (trailHold <= 0f) trailFrac = Mathf.MoveTowards(trailFrac, shown, dt * 0.9f);
+            if (trailFrac < shown) trailFrac = shown;
+            Stretch(fill, width, shown, -0.04f);
+            Stretch(trail, width, trailFrac, -0.02f);
+
+            Color c = shown > 0.5f ? Color.Lerp(Half, Full, (shown - 0.5f) * 2f) : Color.Lerp(Low, Half, shown * 2f);
+            flash = Mathf.MoveTowards(flash, 0f, dt * 4f);
+            Paint(fillR, Color.Lerp(c, flashColor, flash));
+
             if (Camera.main != null) transform.rotation = Camera.main.transform.rotation;
         }
     }

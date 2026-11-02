@@ -165,7 +165,7 @@ namespace Corba
             var chef = go.GetComponent<ChefController>();
             chef.Slot.Value = slot;
             go.GetComponent<NetworkObject>().SpawnWithOwnership(clientId, true);
-            SendToast(slot == 0 ? "Host cook joined" : "Rival cook joined", Color.white);
+            SendToast(slot == 0 ? "toast.hostJoined" : "toast.rivalJoined", Color.white);
         }
 
         void OnClientDisconnected(ulong clientId)
@@ -179,7 +179,7 @@ namespace Corba
                 {
                     Winner.Value = 1 - s;
                     SetPhase(MatchPhase.MatchOver, 0);
-                    SendToast("Your rival left the kitchen", Color.white);
+                    SendToast("toast.rivalLeft", Color.white);
                 }
             }
         }
@@ -248,7 +248,7 @@ namespace Corba
                 chef.TeleportRpc(pos + Vector3.up * 0.3f);
             }
             SetPhase(MatchPhase.Prep, GameData.PrepSeconds);
-            SendToast($"Course {Course.Value + 1} • Half {half + 1}", Color.white);
+            SendToast("toast.half", Color.white, Course.Value + 1, half + 1);
         }
 
         void BeginRaid()
@@ -256,7 +256,7 @@ namespace Corba
             SetPhase(MatchPhase.Raid, GameData.RaidSeconds);
             nextSpawnTime = Now;
             ServerSendWave(AttackerSlot);
-            SendToast("Raid! Units are marching", GameData.Hex("F2B33D"));
+            SendToast("toast.raid", GameData.Hex("F2B33D"));
         }
 
         void EndHalf(bool sofraFell)
@@ -267,7 +267,7 @@ namespace Corba
             {
                 int bonus = Mathf.FloorToInt(TimeLeft / 2f);
                 AddScore(attacker, bonus);
-                SendToast($"The Sofra is empty! +{bonus} speed bonus", GameData.Hex("F2B33D"));
+                SendToast("toast.sofraEmpty", GameData.Hex("F2B33D"), bonus);
             }
             Debug.Log($"[Corba] half end: course {Course.Value + 1} half {Half.Value + 1} attacker {AttackerSlot} score {(AttackerSlot == 0 ? ScoreA.Value : ScoreB.Value)} sofraFell {sofraFell} builds {statBuilds} raiders {statUnits} ladles {statLadles}");
             SetPhase(MatchPhase.HalfResult, GameData.HalfResultSeconds);
@@ -292,7 +292,7 @@ namespace Corba
             if (winner == 0) WinsA.Value++; else WinsB.Value++;
             CheerRpc(winner);
             BonusMask.Value = 1 << (1 - winner);
-            SendToast($"{SlotName(winner)} wins course {Course.Value + 1}!", GameData.Hex("F2B33D"));
+            SendToast(winner == 0 ? "toast.courseHost" : "toast.courseGuest", GameData.Hex("F2B33D"), Course.Value + 1);
 
             if (WinsA.Value >= 2 || WinsB.Value >= 2)
             {
@@ -303,8 +303,6 @@ namespace Corba
             }
             StartCourse(Course.Value + 1);
         }
-
-        static string SlotName(int slot) => slot == 0 ? "Host cook" : "Guest cook";
 
         void SetPhase(MatchPhase phase, float seconds)
         {
@@ -670,7 +668,8 @@ namespace Corba
 
         #region Client feedback
 
-        void SendToast(string msg, Color c) => ToastRpc(msg, c);
+        // Toasts travel as string-table keys so each client reads them in its own language.
+        void SendToast(string key, Color c, int a = 0, int b = 0) => ToastRpc(key, c, a, b);
 
         [Rpc(SendTo.ClientsAndHost)]
         void CheerRpc(int slot)
@@ -679,7 +678,7 @@ namespace Corba
         }
 
         [Rpc(SendTo.ClientsAndHost)]
-        void ToastRpc(string msg, Color c) => Toast?.Invoke(msg, c);
+        void ToastRpc(string key, Color c, int a, int b) => Toast?.Invoke(Loc.F(key, a, b), c);
 
         [Rpc(SendTo.ClientsAndHost)]
         void PourFxRpc(Vector3 pos, Color c) => FX.Splash(pos, c, 14);
@@ -708,7 +707,7 @@ namespace Corba
                 FX.Splash(to + Vector3.up * 0.3f, info.Liquid, 24);
                 FX.Ring(to + Vector3.up * 0.3f, info.Identity, Balance.LadleRadius);
                 for (int i = 0; i < 5; i++) FX.Splat(to + Random.insideUnitSphere * Balance.LadleRadius * 0.6f, info.Liquid, Random.Range(0.8f, 1.6f));
-                FX.PopText(to + Vector3.up * 2.2f, Balance.Ladles[(int)soup].Name + "!", Color.Lerp(info.Identity, Color.white, 0.4f), 1.1f);
+                FX.PopText(to + Vector3.up * 2.2f, Loc.LadleName((int)soup) + "!", Color.Lerp(info.Identity, Color.white, 0.4f), 1.1f);
                 CameraRig.Instance?.Shake(0.25f);
             });
         }
@@ -716,7 +715,7 @@ namespace Corba
         [Rpc(SendTo.ClientsAndHost)]
         void WaveFxRpc(int count)
         {
-            CorbaUI.Instance?.Announce($"WAVE \u00d7{count}!", GameData.Hex("FFB040"));
+            CorbaUI.Instance?.Announce(Loc.F("announce.wave", count), GameData.Hex("FFB040"));
             var map = CorbaMap.Instance;
             if (map == null) return;
             FX.Ring(map.Ocak.Position + Vector3.up * 0.5f, GameData.Hex("FFB040"), 5f);
@@ -726,7 +725,7 @@ namespace Corba
         [Rpc(SendTo.ClientsAndHost)]
         void BiteFxRpc(Vector3 pos, int amount)
         {
-            FX.PopText(pos + Vector3.up * 1.6f, "NOM!", GameData.Hex("FFD86A"), 1.6f);
+            FX.PopText(pos + Vector3.up * 1.6f, Loc.T("fx.nom"), GameData.Hex("FFD86A"), 1.6f);
             CameraRig.Instance?.Shake(0.35f);
             var map = CorbaMap.Instance;
             if (map != null && map.SofraObject != null) Tween.Squash(map.SofraObject, 0.2f, 0.4f);

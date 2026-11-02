@@ -856,10 +856,11 @@ namespace Corba
                         var sign = Place("soup_sign", s.Position + outward.normalized * 1.55f, Quaternion.LookRotation(-outward.normalized), 1f, GameData.Soup(s.Soup).Identity);
                         Art.Tint(sign, GameData.Soup(s.Soup).Identity, 0.75f);
                         var soupInfo = GameData.Soup(s.Soup);
-                        string role = s.Kind == StationKind.DefenderCauldron
-                            ? $"{soupInfo.Keyword}: {GameData.Defence(GameData.DefenceOption(s.Soup, 0)).English} / {GameData.Defence(GameData.DefenceOption(s.Soup, 1)).English}"
-                            : $"{soupInfo.Keyword}: {GameData.Unit(GameData.UnitOption(s.Soup, 0)).English} / {GameData.Unit(GameData.UnitOption(s.Soup, 1)).English}";
-                        WorldLabel.Create(root, s.Position + Vector3.up * 3.1f, soupInfo.Name, role, soupInfo.Identity, soupInfo.Glyph, 9f);
+                        var soupType = s.Soup;
+                        System.Func<string> role = s.Kind == StationKind.DefenderCauldron
+                            ? () => $"{Loc.SoupKeyword(soupType)}: {Loc.DefenceName(GameData.DefenceOption(soupType, 0))} / {Loc.DefenceName(GameData.DefenceOption(soupType, 1))}"
+                            : () => $"{Loc.SoupKeyword(soupType)}: {Loc.UnitName(GameData.UnitOption(soupType, 0))} / {Loc.UnitName(GameData.UnitOption(soupType, 1))}";
+                        WorldLabel.Create(root, s.Position + Vector3.up * 3.1f, () => Loc.SoupName(soupType), role, soupInfo.Identity, soupInfo.Glyph, 9f);
                         break;
                 }
             }
@@ -973,10 +974,10 @@ namespace Corba
 
         void BuildLabels()
         {
-            WorldLabel.Create(root, Ocak.Position + Vector3.up * 3.6f, "OCAK", "Attacker camp", GameData.Hex("E07A5A"));
-            WorldLabel.Create(root, Sofra.Position + Vector3.up * 2.6f, "SOFRA", "Defend the table", GameData.Hex("6FA0D8"));
-            WorldLabel.Create(root, CellCenter(KitchenCell) + Vector3.up * (Height(CellCenter(KitchenCell)) + 5.6f) - (Sofra.Position - CellCenter(KitchenCell)).normalized * 3.5f, "KITCHEN", "Defender soups", GameData.Hex("6FA0D8"));
-            WorldLabel.Create(root, CellCenter(MarketCell) + Vector3.up * (Height(CellCenter(MarketCell)) + 5.6f) - (Ocak.Position - CellCenter(MarketCell)).normalized * 3.5f, "MARKET", "Attacker soups", GameData.Hex("E07A5A"));
+            WorldLabel.Create(root, Ocak.Position + Vector3.up * 3.6f, () => Loc.T("label.ocak"), () => Loc.T("label.ocakSub"), GameData.Hex("E07A5A"));
+            WorldLabel.Create(root, Sofra.Position + Vector3.up * 2.6f, () => Loc.T("label.sofra"), () => Loc.T("label.sofraSub"), GameData.Hex("6FA0D8"));
+            WorldLabel.Create(root, CellCenter(KitchenCell) + Vector3.up * (Height(CellCenter(KitchenCell)) + 5.6f) - (Sofra.Position - CellCenter(KitchenCell)).normalized * 3.5f, () => Loc.T("label.kitchen"), () => Loc.T("label.kitchenSub"), GameData.Hex("6FA0D8"));
+            WorldLabel.Create(root, CellCenter(MarketCell) + Vector3.up * (Height(CellCenter(MarketCell)) + 5.6f) - (Ocak.Position - CellCenter(MarketCell)).normalized * 3.5f, () => Loc.T("label.market"), () => Loc.T("label.marketSub"), GameData.Hex("E07A5A"));
         }
 
         #endregion
