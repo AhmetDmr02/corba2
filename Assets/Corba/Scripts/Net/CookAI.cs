@@ -21,6 +21,8 @@ namespace Corba
         List<Vector3> path = new List<Vector3>();
         int pathIndex;
         Vector3 pathTarget;
+        float escortIdle;
+        int failedActs;
         float repathTimer, progressTimer, recruitTimer, actCooldown, waveTimer;
         Vector3 progressPos;
         int stuckCount;
@@ -44,6 +46,7 @@ namespace Corba
 
         void OnActed(string what)
         {
+            failedActs = 0;
             if (what == "fill" && afterFill != Task.None)
             {
                 task = afterFill;
@@ -86,7 +89,20 @@ namespace Corba
             bool phaseChanged = phase != plannedPhase;
             plannedPhase = phase;
             if (task == Task.None || (phaseChanged && task == Task.Fill && !Defending)) Plan();
-            if (task == Task.Support && !HasSoup) task = Task.None;
+            // Soup spilled on the way: the carry task can never complete, so re-plan.
+            if (task != Task.Fill && task != Task.None && !HasSoup) task = Task.None;
+            if (task == Task.Support && D.Phase.Value == MatchPhase.Raid)
+            {
+                // A wiped wave leaves nothing to escort: cash the soup in at the Ocak rather than idle there until the half ends.
+                escortIdle = LeadUnit() == null ? escortIdle + dt : 0f;
+                if (escortIdle > 2f)
+                {
+                    task = Task.Pour;
+                    afterFillWasSupport = false;
+                    escortIdle = 0f;
+                    path.Clear();
+                }
+            }
             if (task == Task.None) return input;
 
             Vector3 dest = Destination(out float reach);
@@ -94,9 +110,21 @@ namespace Corba
             if (task == Task.Support && TryLadle(ref input)) return input;
             if (dist <= reach)
             {
+                if (task == Task.Build && !CanAffordBuild())
+                {
+                    if (!PickBuildFor((SoupType)chef.Soup.Value, chef.DisplayFill)) ResetPlan();
+                    return input;
+                }
                 if (actCooldown <= 0f && task != Task.Support)
                 {
                     actCooldown = 0.5f;
+                    // The server silently rejects some presses (wrong pad picked, blocked prompt); give up instead of pressing forever.
+                    if (++failedActs > 4)
+                    {
+                        unreachableUntil[dest] = Time.time + 20f;
+                        ResetPlan();
+                        return input;
+                    }
                     if (task == Task.Build && D.PadBuild(buildPad.Index) == null)
                     {
                         if (buildOption == 0) input.Option1 = true; else input.Option2 = true;
@@ -119,6 +147,8 @@ namespace Corba
             afterFillWasSupport = false;
             path.Clear();
             stuckCount = 0;
+            failedActs = 0;
+            escortIdle = 0f;
         }
 
         bool Reachable(Vector3 target) => !unreachableUntil.TryGetValue(target, out var until) || Time.time >= until;
@@ -210,7 +240,7 @@ namespace Corba
                     reach = GameData.InteractRange * 0.65f;
                     return buildPad.TowerPosition;
                 case Task.Support:
-                    reach = 1.5f;
+                    reach = LeadUnit() == null ? GameData.InteractRange + 1.4f : 1.5f;
                     return SupportSpot();
                 default:
                     return transform.position;
@@ -268,19 +298,32 @@ namespace Corba
                 var id = GameData.DefenceOption((SoupType)s, o);
                 foreach (var pad in Map.Pads)
                 {
-                    if (D.PadBuild(pad.Index) != null || !Reachable(pad.TowerPosition)) continue;
+                    if (D.PadBuild(pad.Index) != null || !Reachable(pad.TowerPosition) || !FitsInPot(D.BuildCost(id))) continue;
                     float score = BuildScore(id, pad);
                     if (score > best) { best = score; plan = ((SoupType)s, pad, o); }
                 }
             }
             foreach (var b in DefenceBuild.All)
             {
-                if (b.Level.Value >= GameData.MaxLevel) continue;
+                if (b.Level.Value >= GameData.MaxLevel || !FitsInPot(GameData.UpgradeCost(b.Info.Id, b.Level.Value))) continue;
                 var pad = Map.Pads[b.Pad.Value];
                 float score = BuildScore(b.Info.Id, pad) * 0.75f + b.Level.Value * 0.2f - 0.4f;
                 if (score > best) { best = score; plan = (b.Info.Soup, pad, 0); }
             }
             return plan;
+        }
+
+        // Escalating build costs can pass a full pot; slosh on the walk also eats a few points.
+        bool FitsInPot(int cost) => cost <= chef.Capacity * 0.9f;
+
+        bool CanAffordBuild()
+        {
+            var soup = (SoupType)chef.Soup.Value;
+            var existing = D.PadBuild(buildPad.Index);
+            int cost = existing == null ? D.BuildCost(GameData.DefenceOption(soup, buildOption))
+                : existing.Info.Soup == soup && existing.Level.Value < GameData.MaxLevel ? GameData.UpgradeCost(existing.Info.Id, existing.Level.Value)
+                : int.MaxValue;
+            return chef.DisplayFill + 0.01f >= cost;
         }
 
         bool PickBuildFor(SoupType soup, float fill)
