@@ -126,6 +126,10 @@ namespace Corba
             return p;
         }
 
+        /// <summary>Raw particle for one-off set pieces (e.g. the Sofra toppling) that need their own mix.</summary>
+        public static void Raw(string tex, Vector3 pos, Vector3 vel, float gravity, float life, float size, float endSize, Color c, bool flat = false)
+            => Emit(tex, pos, vel, gravity, life, size, endSize, c, flat);
+
         public static void Splash(Vector3 pos, Color c, int count)
         {
             for (int i = 0; i < count; i++)

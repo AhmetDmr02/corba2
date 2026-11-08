@@ -187,6 +187,8 @@ namespace Corba
             ["announce.attack"] = ("ATTACK!", "SALDIR!"),
             ["announce.raid"] = ("RAID!", "BASKIN!"),
             ["announce.half"] = ("Half over", "Devre bitti"),
+            ["announce.sofraFell"] = ("FEAST TOPPLED!", "SOFRA DEVRİLDİ!"),
+            ["debug.finish"] = ("Test ending (F9)", "Bitişi Test Et (F9)"),
             ["announce.wave"] = ("WAVE ×{0}!", "DALGA ×{0}!"),
             ["name.you"] = ("You", "Sen"),
             ["name.ai"] = ("AI Cook", "YZ Aşçı"),

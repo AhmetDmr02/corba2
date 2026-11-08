@@ -196,7 +196,9 @@ namespace Corba
         public void StartMatchRpc(bool soloTest, RpcParams p = default)
         {
             if (Phase.Value != MatchPhase.Lobby && Phase.Value != MatchPhase.MatchOver) return;
-            if (SlotOf(p.Receive.SenderClientId) != 0) return;
+            // Only the host starts / rematches. Checked by client id, not slot: in "Watch AI vs AI" the host
+            // spectates and has no slot, which used to make Rematch silently do nothing.
+            if (p.Receive.SenderClientId != Unity.Netcode.NetworkManager.ServerClientId && SlotOf(p.Receive.SenderClientId) != 0) return;
             if (!soloTest && CountPlayers() < 2) return;
             StartMatch();
         }
@@ -334,6 +336,29 @@ namespace Corba
             for (int i = 0; i < pads.Length; i++)
                 pads[i] = new SimPad { Tower = GameData.Sim(map.Pads[i].TowerPosition), RoadDistance = map.Pads[i].RoadDistance, HighGround = map.Pads[i].HighGround };
             return new SimWorld(new SimRoad(pts, map.RoadDistances), pads);
+        }
+
+        /// <summary>
+        /// Test shortcut (editor / development builds only): ends the match right now so the finale can be
+        /// checked without playing three courses. The current attacker wins and the Sofra is emptied.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        public void DebugFinishMatchRpc(RpcParams p = default)
+        {
+            if (!(Application.isEditor || Debug.isDebugBuild)) return;
+            if (p.Receive.SenderClientId != Unity.Netcode.NetworkManager.ServerClientId) return;  // host only (works when spectating AI vs AI too)
+            if (Phase.Value == MatchPhase.Lobby || Phase.Value == MatchPhase.MatchOver) return;
+            int winner = AttackerSlot;
+            ClearField();
+            spawnQueue.Clear();
+            waveQueue.Clear();
+            Queued.Value = 0;
+            Marching.Value = 0;
+            Hunger.Value = 0f;
+            if (winner == 0) WinsA.Value = 2; else WinsB.Value = 2;
+            Winner.Value = winner;
+            CheerRpc(winner);
+            SetPhase(MatchPhase.MatchOver, 0);
         }
 
         [Rpc(SendTo.Server)]

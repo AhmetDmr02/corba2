@@ -24,6 +24,12 @@ namespace Corba
         float copiedUntil;
         Button startButton, soloButton;
         bool menuShown, hudShown, resultShown;
+        // The result panel waits for the Sofra-toppling finale to play out first (LoL-style: watch the
+        // "Nexus" go down, then the banner). Safety cap in case the pot is missing or stuck.
+        const float FinaleLinger = 1.8f, FinaleMax = 10f;
+        bool matchOverSeen;
+        float matchOverAt;
+        Button debugFinishButton;
 
         // HUD
         RectTransform versus, objectiveCard, sofraCard, potCard, abilityCard, promptPill, bottomSlot, recruitBar, buildBar, announcer;
@@ -203,6 +209,11 @@ namespace Corba
             sofraFill = Panel(bar, "ui_bar_fill", new Vector2(0f, 0.5f), new Vector2(6, 0), new Vector2(338, 20), new Vector2(0f, 0.5f), GameData.Hex("E8962E"));
             sofraFill.type = UnityEngine.UI.Image.Type.Filled;
             sofraFill.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+
+            // Test shortcut, editor / development builds only, host only (see MatchDirector.DebugFinishMatchRpc).
+            debugFinishButton = Button(hudRoot, "", new Vector2(1f, 1f), new Vector2(-218, -160), new Vector2(300, 60), DebugFinish, 22, GameData.Hex("F2B3A0"));
+            debugFinishButton.Bind("debug.finish");
+            debugFinishButton.gameObject.SetActive(false);
 
             potCard = Rect("Pot", hudRoot, new Vector2(0f, 0f), new Vector2(18, 18), new Vector2(420, 250), new Vector2(0f, 0f));
             Image(potCard, "ui_panel_dark", Color.white);
@@ -400,8 +411,11 @@ namespace Corba
             copiedUntil = Time.time + 1.5f;
         }
 
+        void DebugFinish() => MatchDirector.Instance?.DebugFinishMatchRpc();
+
         void OnLeave()
         {
+            CameraRig.Instance?.ClearFocus();
             CorbaBootstrap.Instance.Leave();
             ShowMenu("");
         }
@@ -492,7 +506,22 @@ namespace Corba
                 hudRoot.gameObject.SetActive(showHud);
                 if (showHud) HudIntro();
             }
-            bool showResult = hasDirector && phase == MatchPhase.MatchOver;
+            bool matchOver = hasDirector && phase == MatchPhase.MatchOver;
+            if (matchOver && !matchOverSeen)
+            {
+                matchOverSeen = true;
+                matchOverAt = Time.time;
+            }
+            if (!matchOver && matchOverSeen)
+            {
+                matchOverSeen = false;
+                CameraRig.Instance?.ClearFocus();
+            }
+            var pot = SofraPot.Instance;
+            bool finaleDone = pot == null
+                || (pot.ToppledAt > 0f && Time.time >= Mathf.Max(pot.ToppledAt + FinaleLinger, matchOverAt + 1.5f))
+                || Time.time >= matchOverAt + FinaleMax;
+            bool showResult = matchOver && finaleDone;
             if (showResult != resultShown)
             {
                 resultShown = showResult;
@@ -510,6 +539,9 @@ namespace Corba
             }
 
             UpdateToasts();
+            bool canDebug = (Application.isEditor || Debug.isDebugBuild) && hasDirector && CorbaBootstrap.IsHost && director.InPlay;
+            if (debugFinishButton != null && debugFinishButton.gameObject.activeSelf != canDebug) debugFinishButton.gameObject.SetActive(canDebug);
+            if (canDebug && Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame) DebugFinish();
             if (!hasDirector) return;
             if (phase == MatchPhase.Lobby) UpdateLobby(director);
             else UpdateHud(director, phase);

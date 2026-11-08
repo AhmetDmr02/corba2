@@ -518,7 +518,11 @@ namespace Corba
             Flatten(first, 0, 1, ocakTier, TileType.Plaza);
             Flatten(last, 0, 1, sofraTier, TileType.Plaza);
 
-            KitchenCell = FindPlazaSpot(last, 2, 4, sofraTier, 3);
+            // The kitchen gets its own room: at least 3 tiles from the Sofra cauldron and away from the map's
+            // corners, so the five cauldrons, the Sofra pot and the defender's spawn never crowd each other.
+            // Falls back to the old, tighter ring if a cramped map has no such spot.
+            KitchenCell = FindPlazaSpot(last, 3, 5, sofraTier, 3, true);
+            if (KitchenCell == last) KitchenCell = FindPlazaSpot(last, 2, 4, sofraTier, 3, true);
             Flatten(KitchenCell, 1, 1, sofraTier, TileType.Plaza);
 
             int third = RoadCells.Count / 3;
@@ -526,7 +530,7 @@ namespace Corba
             Flatten(MarketCell, 1, 1, Tiles[MarketCell.x, MarketCell.y].Type == TileType.Water ? 0 : Tiles[MarketCell.x, MarketCell.y].Tier, TileType.Plaza);
         }
 
-        Vector2Int FindPlazaSpot(Vector2Int near, int minDist, int maxDist, int preferTier, int margin)
+        Vector2Int FindPlazaSpot(Vector2Int near, int minDist, int maxDist, int preferTier, int margin, bool avoidEdges = false)
         {
             Vector2Int best = near;
             float bestScore = float.MaxValue;
@@ -546,6 +550,8 @@ namespace Corba
                 if (clash) continue;
                 float score = Mathf.Abs(Tiles[x, z].Tier - preferTier) * 2f + Mathf.Abs(d - (minDist + maxDist) * 0.5f) + (float)rng.NextDouble();
                 if (x < margin || x > W - 1 - margin) score += 0.5f;
+                // A plaza hugging the top/bottom border or a corner leaves no room behind its cauldron arc.
+                if (avoidEdges && (z < 3 || z > H - 4 || x < 3 || x > W - 4)) score += 3f;
                 if (score < bestScore) { bestScore = score; best = c; }
             }
             return best;

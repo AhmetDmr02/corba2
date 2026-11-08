@@ -95,3 +95,39 @@
 21:08:17 [Corba] half end: course 1 half 2 attacker 0 score 33 sofraFell False builds 9 raiders 15 ladles 0
 21:08:29 PLAYMODE ExitingPlayMode
 21:08:29 PLAYMODE EnteredEditMode
+21:09:19 PLAYMODE ExitingEditMode
+21:09:26 PLAYMODE EnteredPlayMode
+21:16:36 PLAYMODE ExitingPlayMode
+21:16:37 PLAYMODE EnteredEditMode
+21:16:37 PLAYMODE ExitingEditMode
+21:16:44 PLAYMODE EnteredPlayMode
+21:19:23 [Corba] half end: course 1 half 1 attacker 1 score 34 sofraFell False builds 6 raiders 18 ladles 14
+21:21:50 [Corba] half end: course 1 half 2 attacker 0 score 32 sofraFell False builds 6 raiders 23 ladles 20
+21:24:17 [Corba] half end: course 2 half 1 attacker 0 score 23 sofraFell False builds 6 raiders 8 ladles 19
+21:26:44 [Corba] half end: course 2 half 2 attacker 1 score 26 sofraFell False builds 6 raiders 24 ladles 11
+21:27:11 PLAYMODE ExitingPlayMode
+21:27:12 PLAYMODE EnteredEditMode
+21:29:06 COMPILATION FINISHED
+21:32:00 COMPILE Assets\Corba\Scripts\Core\FX.cs(130,28): error CS0102: The type 'FX' already contains a definition for 'Particle'
+21:32:00 COMPILATION FINISHED
+21:32:00 Error Assets\Corba\Scripts\Core\FX.cs(130,28): error CS0102: The type 'FX' already contains a definition for 'Particle'
+
+21:32:45 COMPILATION FINISHED
+21:32:55 PLAYMODE ExitingEditMode
+21:33:02 PLAYMODE EnteredPlayMode
+21:35:26 [Corba] half end: course 1 half 1 attacker 1 score 30 sofraFell False builds 0 raiders 19 ladles 0
+21:37:53 [Corba] half end: course 1 half 2 attacker 0 score 0 sofraFell False builds 6 raiders 0 ladles 0
+21:40:20 [Corba] half end: course 2 half 1 attacker 0 score 0 sofraFell False builds 6 raiders 0 ladles 0
+21:42:47 [Corba] half end: course 2 half 2 attacker 1 score 13 sofraFell False builds 1 raiders 16 ladles 0
+21:43:06 PLAYMODE ExitingPlayMode
+21:43:06 PLAYMODE EnteredEditMode
+21:45:46 COMPILATION FINISHED
+21:45:57 PLAYMODE ExitingEditMode
+21:46:04 PLAYMODE EnteredPlayMode
+21:46:28 PLAYMODE ExitingPlayMode
+21:46:28 PLAYMODE EnteredEditMode
+21:49:34 COMPILATION FINISHED
+21:49:44 PLAYMODE ExitingEditMode
+21:49:51 PLAYMODE EnteredPlayMode
+21:50:17 PLAYMODE ExitingPlayMode
+21:50:18 PLAYMODE EnteredEditMode

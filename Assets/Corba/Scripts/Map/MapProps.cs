@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -44,7 +45,7 @@ namespace Corba
     public class SofraPot : MonoBehaviour
     {
         /// <summary>The Sofra pot is bigger than the kitchen and market cauldrons so it reads as the goal.</summary>
-        public const float Scale = 1.3f;
+        public const float Scale = 1.15f;
         public const float FullHeight = 1.28f;
         const float EmptyHeight = 0.42f;
 
@@ -54,6 +55,28 @@ namespace Corba
         Color color;
         Vector3 baseScale;
         float shown = 1f, phase, wobble;
+
+        // Finale: when the Sofra's hunger hits zero the pot boils over and topples toward the road,
+        // then rights itself when the next half refills it. Driven only by synced state (phase + hunger),
+        // so it plays at the same moment on every screen without extra network messages.
+        enum PotState { Standing, Toppling, Toppled, Rising }
+        PotState state = PotState.Standing;
+        const float ToppleAngle = 94f;
+        Vector3 restPos, tipDir, tipAxis, pivot;
+        Quaternion restRot;
+        float lyingAngle;
+        static readonly Color[] Confetti =
+        {
+            GameData.Hex("F5B92E"), GameData.Hex("E8412C"), GameData.Hex("47C46B"), GameData.Hex("9A57D6"), GameData.Hex("38A3DB"), GameData.Hex("FFF4DC")
+        };
+
+        /// <summary>True while the pot is toppling, lying on its side or getting back up.</summary>
+        public bool IsDown => state != PotState.Standing;
+
+        /// <summary>Time the pot came to rest on its side (for the result screen to wait on); -1 while standing.</summary>
+        public float ToppledAt { get; private set; } = -1f;
+
+        bool matchFocused;
 
         public Vector3 SurfacePosition => surface != null ? surface.position : transform.position + Vector3.up * 1.2f;
 
@@ -83,6 +106,32 @@ namespace Corba
             if (surface == null) return;
             float dt = Time.deltaTime;
             phase += dt;
+
+            var director = MatchDirector.Instance;
+            bool live = director != null && director.IsSpawned;
+            // Topples when the Sofra is emptied, and always as the match-end finale (like a Nexus going down).
+            bool fell = live && ((director.Phase.Value == MatchPhase.HalfResult && director.Hunger.Value <= 0.01f) || director.Phase.Value == MatchPhase.MatchOver);
+            bool matchOver = live && director.Phase.Value == MatchPhase.MatchOver;
+            if (state == PotState.Standing && fell) StartCoroutine(Topple(matchOver));
+            else if (state == PotState.Toppled && live && director.InPlay && Target() > 0.5f) StartCoroutine(StandUp());
+            // Pot already went over at the end of the last half: still lock the camera on it for the result.
+            if (matchOver && state == PotState.Toppled && !matchFocused)
+            {
+                matchFocused = true;
+                CameraRig.Instance?.Focus(restPos + tipDir * 1.5f, 600f, 0.6f);
+            }
+            if (!matchOver) matchFocused = false;
+            if (state != PotState.Standing)
+            {
+                if (state == PotState.Toppled)
+                {
+                    Vector3 mouth = MouthPosition();
+                    if (Random.value < dt * 4f) FX.Drip(mouth, color);
+                    if (Random.value < dt * 2.5f) FX.Steam(mouth + Vector3.up * 0.3f);
+                }
+                return;
+            }
+
             float target = Target();
             // Drains quickly when bitten, refills slowly (with sparkle) when a new half starts.
             bool refilling = target > shown + 0.05f;
@@ -112,6 +161,161 @@ namespace Corba
             // Running low: the pot rattles now and then so the danger reads from across the map.
             bool low = shown < 0.3f;
             if (low && Random.value < dt * 1.2f) Tween.Punch(transform, 0.08f, 0.25f);
+        }
+
+        Vector3 MouthPosition() => restPos + tipDir * (1.15f * Scale + 0.5f) + Vector3.up * 0.5f;
+
+        void SetTilt(float angle)
+        {
+            var q = Quaternion.AngleAxis(angle, tipAxis);
+            transform.SetPositionAndRotation(pivot + q * (restPos - pivot), q * restRot);
+        }
+
+        IEnumerator Topple(bool matchEnd)
+        {
+            state = PotState.Toppling;
+            ToppledAt = -1f;
+
+            restPos = transform.position;
+            restRot = transform.rotation;
+            var map = CorbaMap.Instance;
+            Vector3 toward = map != null ? map.SampleRoad(Mathf.Max(0f, map.RoadLength - 8f), 0f) - restPos : transform.forward;
+            toward.y = 0f;
+            tipDir = toward.sqrMagnitude > 0.01f ? toward.normalized : Vector3.forward;
+            tipAxis = Vector3.Cross(Vector3.up, tipDir);
+            pivot = restPos + tipDir * (1.15f * Scale);
+            // Lock the camera, centred between the pot and where the soup will run. At match end it stays
+            // locked through the result screen (released when the next match starts or on leaving).
+            matchFocused = matchEnd;
+            CameraRig.Instance?.Focus(restPos + tipDir * 1.5f, matchEnd ? 600f : 5.5f, 0.6f);
+            // Give the camera time to arrive (and the last raider time to finish its dive).
+            yield return new WaitForSeconds(matchEnd ? 0.9f : 0.7f);
+            var col = GetComponent<Collider>();
+            if (col != null) col.enabled = false;
+            surface.gameObject.SetActive(true);
+
+            // 1) Boil-over: the pot rattles harder and harder, the soup heaves up over the rim.
+            const float boil = 1.1f;
+            for (float t = 0f; t < boil; t += Time.deltaTime)
+            {
+                float k = t / boil;
+                float dt = Time.deltaTime;
+                transform.SetPositionAndRotation(restPos + new Vector3(Random.Range(-1f, 1f), Random.Range(0f, 0.5f), Random.Range(-1f, 1f)) * 0.07f * k,
+                    restRot * Quaternion.Euler(Random.Range(-4f, 4f) * k, 0f, Random.Range(-4f, 4f) * k));
+                surface.localPosition = new Vector3(0f, FullHeight + 0.18f * k + Mathf.Sin(t * 30f) * 0.04f * k, 0f);
+                float pulse = 1f + Mathf.Sin(t * 22f) * 0.05f * k;
+                surface.localScale = new Vector3(baseScale.x * pulse, baseScale.y, baseScale.z * pulse);
+                if (Random.value < dt * (20f + 40f * k)) FX.Bubble(surface.position + new Vector3(Random.Range(-0.7f, 0.7f), 0.05f, Random.Range(-0.7f, 0.7f)), Color.Lerp(color, Color.white, 0.3f));
+                if (Random.value < dt * (6f + 14f * k)) FX.Steam(surface.position + new Vector3(Random.Range(-0.6f, 0.6f), 0.2f, Random.Range(-0.6f, 0.6f)));
+                if (Random.value < dt * 12f * k)
+                {
+                    var d = Quaternion.Euler(0, Random.Range(0f, 360f), 0) * Vector3.forward;
+                    FX.Spill(surface.position + d * 0.9f * Scale, d, color);
+                }
+                CameraRig.Instance?.Shake(0.12f + 0.3f * k);
+                yield return null;
+            }
+            FX.Raw("fx_star", surface.position + Vector3.up * 0.4f, Vector3.zero, 0f, 0.25f, 0.6f, 4.5f, new Color(1f, 0.95f, 0.75f, 0.9f));
+
+            // 2) Tip: falls over toward the road, accelerating like a real topple, soup pouring out of the mouth.
+            const float tip = 0.42f;
+            for (float t = 0f; t < tip; t += Time.deltaTime)
+            {
+                float k = Mathf.Clamp01(t / tip);
+                SetTilt(ToppleAngle * k * k);
+                if (k > 0.35f)
+                    for (int i = 0; i < 3; i++)
+                        FX.Spill(surface.position, (tipDir + Random.insideUnitSphere * 0.35f).normalized, color);
+                yield return null;
+            }
+            SetTilt(ToppleAngle);
+
+            // 3) Impact.
+            Impact();
+
+            // 4) Settle: a couple of heavy rocks on its side.
+            const float settle = 0.7f;
+            for (float t = 0f; t < settle; t += Time.deltaTime)
+            {
+                float k = t / settle;
+                SetTilt(ToppleAngle - Mathf.Sin(k * Mathf.PI * 2.5f) * (1f - k) * 10f);
+                yield return null;
+            }
+            SetTilt(ToppleAngle);
+            lyingAngle = ToppleAngle;
+            state = PotState.Toppled;
+            ToppledAt = Time.time;
+        }
+
+        void Impact()
+        {
+            CameraRig.Instance?.Shake(1.5f);
+            surface.gameObject.SetActive(false);
+            shown = 0f;
+            Vector3 mouth = MouthPosition();
+            Vector3 ground = new Vector3(restPos.x, restPos.y + 0.15f, restPos.z);
+
+            FX.Raw("fx_star", mouth + Vector3.up * 0.6f, Vector3.zero, 0f, 0.35f, 1f, 7f, new Color(1f, 0.97f, 0.85f, 0.95f));
+            FX.Ring(ground, color, 6f);
+            FX.Ring(ground + tipDir * 2f, new Color(1f, 0.95f, 0.8f), 9f);
+            FX.Splash(mouth, color, 45);
+            for (int i = 0; i < 26; i++)
+                FX.Spill(mouth, (Quaternion.Euler(0, Random.Range(-60f, 60f), 0) * tipDir + Vector3.up * Random.Range(0f, 0.4f)).normalized, color);
+            for (int i = 0; i < 48; i++)
+            {
+                var v = Random.insideUnitSphere * Random.Range(3f, 7f);
+                v.y = Random.Range(5f, 10f);
+                FX.Raw("fx_star", restPos + Vector3.up * 1.6f, v, 9f, Random.Range(1.3f, 2f), Random.Range(0.25f, 0.42f), 0.12f, Confetti[Random.Range(0, Confetti.Length)]);
+            }
+            for (int i = 0; i < 10; i++) FX.Steam(mouth + Random.insideUnitSphere * 1.2f);
+            for (int i = 0; i < 14; i++)
+            {
+                float a = i / 14f * Mathf.PI * 2f;
+                var d = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                FX.Raw("fx_puff", ground + d * 0.8f, d * 7f + Vector3.up * 0.4f, 0f, 0.8f, 0.6f, 1.8f, new Color(0.9f, 0.82f, 0.66f, 0.6f));
+            }
+            StartCoroutine(SpreadWave(mouth));
+            CorbaUI.Instance?.Announce(Loc.T("announce.sofraFell"), GameData.Hex("F2B33D"));
+        }
+
+        /// <summary>The spilled soup rolls down the road as a widening wave, leaving a big puddle behind.</summary>
+        IEnumerator SpreadWave(Vector3 from)
+        {
+            for (int i = 0; i < 14; i++)
+            {
+                float dist = 0.8f + i * 0.55f;
+                int count = 1 + i / 4;
+                for (int j = 0; j < count; j++)
+                {
+                    var dir = Quaternion.Euler(0, Random.Range(-38f, 38f), 0) * tipDir;
+                    var p = from + dir * dist;
+                    FX.Splat(p, color, Random.Range(1.4f, 2.2f));
+                    FX.Raw("fx_blob", p + Vector3.up * 0.2f, dir * 2f + Vector3.up * Random.Range(1.5f, 3f), 12f, 0.5f, Random.Range(0.2f, 0.35f), 0.05f, color);
+                }
+                FX.Raw("fx_puff", from + tipDir * dist + Vector3.up * 0.3f, tipDir * 1.5f, 0f, 0.5f, 0.6f, 1.4f, new Color(1f, 1f, 1f, 0.35f));
+                yield return new WaitForSeconds(0.05f);
+            }
+        }
+
+        IEnumerator StandUp()
+        {
+            state = PotState.Rising;
+            ToppledAt = -1f;
+            const float dur = 0.75f;
+            for (float t = 0f; t < dur; t += Time.deltaTime)
+            {
+                float k = t / dur;
+                SetTilt(lyingAngle * (1f - Tween.Evaluate(Ease.OutBack, k)));
+                if (Random.value < Time.deltaTime * 20f) FX.Sparkle(transform.position + Vector3.up * 1.5f, GameData.Hex("FFE08A"));
+                yield return null;
+            }
+            transform.SetPositionAndRotation(restPos, restRot);
+            var col = GetComponent<Collider>();
+            if (col != null) col.enabled = true;
+            FX.Ring(restPos + Vector3.up * 0.15f, GameData.Hex("FFE08A"), 3f);
+            shown = 0f;
+            surface.gameObject.SetActive(true);
+            state = PotState.Standing;
         }
 
         /// <summary>A raider reached the feast: the pot shudders as it is bitten (the raider itself dives in, see <see cref="PotDiver"/>).</summary>

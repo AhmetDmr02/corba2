@@ -20,6 +20,24 @@ namespace Corba
 
         public void Follow(Transform t) => target = t;
 
+        Vector3 focusPoint;
+        float focusUntil = -1f, focusZoom = 1f;
+
+        /// <summary>
+        /// Takes the camera to a dramatic moment (e.g. the Sofra toppling) and locks it there, centred, for
+        /// the given time. Map-edge clamping is skipped so a pot on the border still sits mid-screen.
+        /// </summary>
+        public void Focus(Vector3 point, float seconds, float zoomTo)
+        {
+            focusPoint = point;
+            focusUntil = Time.time + seconds;
+            focusZoom = zoomTo;
+        }
+
+        public void ClearFocus() => focusUntil = -1f;
+
+        public bool InCinematic => Time.time < focusUntil;
+
         public void Shake(float amount) => shake = Mathf.Max(shake, amount);
 
         void LateUpdate()
@@ -30,12 +48,16 @@ namespace Corba
 
             Vector3 desiredPos;
             Quaternion desiredRot;
-            if (target != null)
+            bool cinematic = Time.time < focusUntil;
+            if (cinematic || target != null)
             {
-                Vector3 offset = new Vector3(0f, 17f, -12f) * zoom;
-                Vector3 focus = target.position;
-                focus.x = Mathf.Clamp(focus.x, -CorbaMap.HalfX + 13f, CorbaMap.HalfX - 13f);
-                focus.z = Mathf.Clamp(focus.z, -CorbaMap.HalfZ + 4f, CorbaMap.HalfZ - 9f);
+                Vector3 offset = new Vector3(0f, 17f, -12f) * (cinematic ? focusZoom : zoom);
+                Vector3 focus = cinematic ? focusPoint : target.position;
+                if (!cinematic)
+                {
+                    focus.x = Mathf.Clamp(focus.x, -CorbaMap.HalfX + 13f, CorbaMap.HalfX - 13f);
+                    focus.z = Mathf.Clamp(focus.z, -CorbaMap.HalfZ + 4f, CorbaMap.HalfZ - 9f);
+                }
                 desiredPos = focus + offset;
                 desiredRot = Quaternion.LookRotation(focus + Vector3.up * 1f - desiredPos);
                 transform.position = Vector3.Lerp(transform.position, desiredPos, 1f - Mathf.Exp(-6f * dt));
