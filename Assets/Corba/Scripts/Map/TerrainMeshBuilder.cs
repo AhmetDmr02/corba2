@@ -137,7 +137,8 @@ namespace Corba
             switch (layer)
             {
                 case Layer.Grass: return Art.GroundMaterial("ground_grass", 1f);
-                case Layer.Dirt: return Art.GroundMaterial("ground_dirt", 0f);
+                // Road tiles: hand-painted Arnavut kaldırımı (cobblestone) instead of plain dirt.
+                case Layer.Dirt: return Art.GroundMaterial("ground_cobble", 0f);
                 case Layer.Plaza: return Art.GroundMaterial("ground_plaza", 0f);
                 case Layer.Cliff: return Art.GroundMaterial("ground_cliff", 0.6f);
                 case Layer.Water: return Art.GroundMaterial("ground_water", 0f);

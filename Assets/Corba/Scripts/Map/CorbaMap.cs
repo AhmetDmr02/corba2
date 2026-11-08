@@ -829,6 +829,8 @@ namespace Corba
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
 
+            DressRoadEdges();
+
             foreach (var s in Stations)
             {
                 switch (s.Kind)
@@ -840,7 +842,7 @@ namespace Corba
                         Place("banner", s.Position + new Vector3(1.8f, 0, 1.8f), Quaternion.identity, 1f, GameData.Hex("C04A2C"));
                         break;
                     case StationKind.Sofra:
-                        SofraObject = Place("sofra", s.Position, LookAtRoad(s.Position), 1f, GameData.Hex("B98A55")).transform;
+                        SofraObject = PlaceSofraPot(s);
                         break;
                     default:
                         var cauldron = Place("cauldron", s.Position, Quaternion.Euler(0, s.Index * 47f, 0), 1f, GameData.Hex("3D3A3A"));
@@ -875,6 +877,92 @@ namespace Corba
                 p.Marker = marker.transform;
                 if (p.HighGround) Place("flag_high", p.TowerPosition + new Vector3(1.1f, 0, 1.1f), Quaternion.identity, 1f, GameData.Hex("F2B33D"));
             }
+        }
+
+        /// <summary>
+        /// The Sofra is a big soup cauldron at the end of the road. Visual only: its level follows the Sofra's
+        /// hunger (see <see cref="SofraPot"/>); raiders still bite the same way.
+        /// </summary>
+        Transform PlaceSofraPot(Station s)
+        {
+            var pot = Place("cauldron", s.Position, LookAtRoad(s.Position) * Quaternion.Euler(0, 25f, 0), SofraPot.Scale, GameData.Hex("3D3A3A"));
+            // Solid like the kitchen cauldrons, so cooks walk around it (the nav grid reads this collider too).
+            var col = pot.AddComponent<CapsuleCollider>();
+            col.radius = 1.05f;
+            col.height = 2.5f;
+            col.center = new Vector3(0, 1.2f, 0);
+            var soupColor = GameData.Hex("E8962E");
+            var surface = SoupSurface(pot.transform, soupColor, SofraPot.FullHeight, 1.9f);
+            pot.AddComponent<SofraPot>().Init(surface, soupColor);
+            // Old splashes around the pot sell that this is where the feast is ladled out.
+            var deco = new System.Random(Seed * 31 + 11);
+            for (int i = 0; i < 4; i++)
+            {
+                float a = (float)deco.NextDouble() * Mathf.PI * 2f;
+                var p = s.Position + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * (2f + (float)deco.NextDouble() * 0.8f);
+                RoadStain(p, soupColor, 0.5f + (float)deco.NextDouble() * 0.4f, (float)deco.NextDouble() * 360f);
+            }
+            return pot.transform;
+        }
+
+        /// <summary>
+        /// Road dressing on top of the cobble texture: kerb stones where the road meets grass or water,
+        /// and old soup stains where cooks have sloshed before. Uses its own RNG so the gameplay layout
+        /// (bumps, trees) generated after this stays exactly as before.
+        /// </summary>
+        void DressRoadEdges()
+        {
+            var deco = new System.Random(Seed * 31 + 7);
+            float R(float a, float b) => a + (float)deco.NextDouble() * (b - a);
+            var kerbTint = GameData.Hex("C9B79C");
+            foreach (var c in RoadCells)
+            {
+                var tile = Tiles[c.x, c.y];
+                if (tile.Type != TileType.Road) continue;
+                Vector3 center = CellCenter(c);
+                foreach (var d in Dirs)
+                {
+                    var n = c + d;
+                    if (InGrid(n))
+                    {
+                        var nt = Tiles[n.x, n.y].Type;
+                        if (nt == TileType.Road || nt == TileType.Bridge || nt == TileType.Plaza || nt == TileType.Pad || nt == TileType.Stairs) continue;
+                    }
+                    Vector3 normal = new Vector3(d.x, 0, d.y);
+                    Vector3 along = new Vector3(-d.y, 0, d.x);
+                    for (int k = -1; k <= 1; k++)
+                    {
+                        var p = center + normal * (T * 0.5f - 0.22f) + along * (k * 1.0f + R(-0.15f, 0.15f));
+                        p.y = Height(p);
+                        var stone = Place("rock_small", p, Quaternion.Euler(0, R(0, 360), 0), R(0.38f, 0.5f), kerbTint);
+                        Art.Tint(stone, kerbTint, 0.35f);
+                    }
+                }
+            }
+
+            Color[] stains = { GameData.Hex("E8962E"), GameData.Hex("C9452E"), GameData.Hex("D6B04A"), GameData.Hex("A2C77A") };
+            for (float d = 4f; d < RoadLength - 4f; d += R(5f, 9f))
+            {
+                var p = SampleRoad(d, R(-1.1f, 1.1f));
+                RoadStain(p, stains[deco.Next(stains.Length)], R(0.45f, 0.85f), R(0, 360));
+            }
+        }
+
+        void RoadStain(Vector3 p, Color c, float size, float yaw)
+        {
+            var go = new GameObject("SoupStain");
+            go.transform.SetParent(root, false);
+            go.transform.position = new Vector3(p.x, Height(p) + 0.03f, p.z);
+            go.transform.rotation = Quaternion.Euler(90f, yaw, 0f);
+            go.transform.localScale = Vector3.one * size * 1.6f;
+            go.AddComponent<MeshFilter>().sharedMesh = FX.Quad;
+            var r = go.AddComponent<MeshRenderer>();
+            r.sharedMaterial = FX.Mat("fx_splat");
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_BaseColor", new Color(c.r * 0.85f, c.g * 0.8f, c.b * 0.75f, 0.55f));
+            r.SetPropertyBlock(block);
         }
 
         Quaternion LookAtRoad(Vector3 p)
@@ -975,7 +1063,7 @@ namespace Corba
         void BuildLabels()
         {
             WorldLabel.Create(root, Ocak.Position + Vector3.up * 3.6f, () => Loc.T("label.ocak"), () => Loc.T("label.ocakSub"), GameData.Hex("E07A5A"));
-            WorldLabel.Create(root, Sofra.Position + Vector3.up * 2.6f, () => Loc.T("label.sofra"), () => Loc.T("label.sofraSub"), GameData.Hex("6FA0D8"));
+            WorldLabel.Create(root, Sofra.Position + Vector3.up * 4.6f, () => Loc.T("label.sofra"), () => Loc.T("label.sofraSub"), GameData.Hex("6FA0D8"));
             WorldLabel.Create(root, CellCenter(KitchenCell) + Vector3.up * (Height(CellCenter(KitchenCell)) + 5.6f) - (Sofra.Position - CellCenter(KitchenCell)).normalized * 3.5f, () => Loc.T("label.kitchen"), () => Loc.T("label.kitchenSub"), GameData.Hex("6FA0D8"));
             WorldLabel.Create(root, CellCenter(MarketCell) + Vector3.up * (Height(CellCenter(MarketCell)) + 5.6f) - (Ocak.Position - CellCenter(MarketCell)).normalized * 3.5f, () => Loc.T("label.market"), () => Loc.T("label.marketSub"), GameData.Hex("E07A5A"));
         }

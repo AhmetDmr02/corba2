@@ -164,8 +164,7 @@ namespace Corba
             roomCodeRow = Rect("RoomCode", panel, new Vector2(0.5f, 1f), new Vector2(0, -268), new Vector2(560, 76));
             Image(roomCodeRow, "ui_field", Color.white);
             Text(roomCodeRow, "", 20, Ink, TextAnchor.MiddleLeft, new Vector2(0f, 0.5f), new Vector2(92, 0), new Vector2(150, 40), false, false).Bind("lobby.roomCode");
-            // The title font sits low in its line box, so the code is nudged up to look centred in the row.
-            roomCodeText = Text(roomCodeRow, "", 40, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(10, 9), new Vector2(240, 70), true, false);
+            roomCodeText = Text(roomCodeRow, "", 40, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(10, 0), new Vector2(240, 70), true, false);
             Button(roomCodeRow, "", new Vector2(1f, 0.5f), new Vector2(-78, 0), new Vector2(140, 56), CopyRoomCode, 22).Bind("lobby.copy");
 
             startButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(0, 180), new Vector2(440, 80), () => MatchDirector.Instance?.StartMatchRpc(false), 30).Bind("lobby.start");
@@ -870,7 +869,10 @@ namespace Corba
             if (sp.z < 0) dir = -dir;
             dir.Normalize();
             var size = Root.rect.size;
-            float k = Mathf.Min((size.x * 0.5f - 90f) / Mathf.Max(Mathf.Abs(dir.x), 1e-3f), (size.y * 0.5f - 120f) / Mathf.Max(Mathf.Abs(dir.y), 1e-3f));
+            // Keep clear of the HUD: score cards and timer along the top, pot card and recruit bar along the bottom.
+            float halfX = size.x * 0.5f - 150f;
+            float halfY = size.y * 0.5f - (dir.y > 0f ? 240f : 300f);
+            float k = Mathf.Min(halfX / Mathf.Max(Mathf.Abs(dir.x), 1e-3f), halfY / Mathf.Max(Mathf.Abs(dir.y), 1e-3f));
             edgeArrow.rectTransform.anchoredPosition = dir * k * (0.96f + Mathf.Sin(Time.time * 6f) * 0.03f);
             edgeArrow.rectTransform.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f);
         }

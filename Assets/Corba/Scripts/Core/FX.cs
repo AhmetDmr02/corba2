@@ -154,6 +154,29 @@ namespace Corba
                 Emit("fx_splat", hit.point + Vector3.up * 0.08f, Vector3.zero, 0f, 6f, Random.Range(0.5f, 0.8f), Random.Range(0.9f, 1.3f), new Color(c.r, c.g, c.b, 0.92f), true);
         }
 
+        /// <summary>Tower firing flash: a coloured burst and a few droplets at the barrel.</summary>
+        public static void Muzzle(Vector3 pos, Color c, bool lob)
+        {
+            var light = Color.Lerp(c, Color.white, 0.55f);
+            for (int i = 0; i < (lob ? 7 : 4); i++)
+                Emit("fx_puff", pos + Random.insideUnitSphere * 0.25f, Random.insideUnitSphere * 1.4f + Vector3.up * 0.8f, -1f, Random.Range(0.35f, 0.55f), 0.4f, lob ? 1.4f : 1f, new Color(light.r, light.g, light.b, 0.75f));
+            Emit("fx_star", pos, Vector3.zero, 0f, 0.18f, lob ? 1.4f : 0.9f, 0.1f, new Color(1f, 0.97f, 0.85f, 0.95f));
+            for (int i = 0; i < 3; i++) Drip(pos, c);
+        }
+
+        /// <summary>Shot landing: splash, a flat shock ring on the ground and, for lobbed shots, a lasting stain.</summary>
+        public static void Impact(Vector3 pos, Color c, bool lob)
+        {
+            Splash(pos, c, lob ? 18 : 8);
+            Emit("fx_star", pos, Vector3.zero, 0f, 0.2f, lob ? 1.8f : 1.1f, 0.2f, new Color(1f, 0.97f, 0.85f, 0.9f));
+            Vector3 ground = pos;
+            if (Physics.Raycast(pos + Vector3.up, Vector3.down, out var hit, 5f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) ground = hit.point;
+            Emit("fx_ring", ground + Vector3.up * 0.1f, Vector3.zero, 0f, 0.45f, 0.3f, lob ? 4f : 1.8f, new Color(c.r, c.g, c.b, 0.95f), true);
+            for (int i = 0; i < (lob ? 6 : 3); i++)
+                Emit("fx_puff", pos + Random.insideUnitSphere * 0.3f, Random.insideUnitSphere * 1.6f + Vector3.up * 0.6f, -0.5f, Random.Range(0.4f, 0.6f), 0.4f, 1.1f, new Color(c.r, c.g, c.b, 0.6f));
+            if (lob) Splat(pos, c, 1.6f);
+        }
+
         public static void Mote(Vector3 pos)
         {
             var c = new Color(1f, 0.93f, 0.7f, 0.55f);
@@ -212,10 +235,11 @@ namespace Corba
 
         public static void Ring(Vector3 pos, Color c, float radius)
         {
-            Emit("fx_ring", pos, Vector3.zero, 0f, 0.55f, 0.5f, radius * 2f, new Color(c.r, c.g, c.b, 0.9f), true);
-            for (int i = 0; i < 10; i++)
+            Emit("fx_ring", pos, Vector3.zero, 0f, 0.75f, 0.5f, radius * 2f, new Color(c.r, c.g, c.b, 1f), true);
+            Emit("fx_ring", pos + Vector3.up * 0.05f, Vector3.zero, 0f, 0.5f, 0.3f, radius * 1.4f, new Color(Mathf.Lerp(c.r, 1f, 0.5f), Mathf.Lerp(c.g, 1f, 0.5f), Mathf.Lerp(c.b, 1f, 0.5f), 0.8f), true);
+            for (int i = 0; i < 16; i++)
             {
-                float a = i / 10f * Mathf.PI * 2f;
+                float a = i / 16f * Mathf.PI * 2f;
                 var dir = new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a));
                 Emit("fx_puff", pos + dir * 0.4f, dir * radius * 1.4f + Vector3.up * 0.3f, 0f, 0.6f, 0.4f, 0.9f, new Color(c.r, c.g, c.b, 0.7f));
             }
@@ -235,7 +259,7 @@ namespace Corba
             var mesh = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             Destroy(mesh.GetComponent<Collider>());
             mesh.transform.SetParent(ball, false);
-            mesh.transform.localScale = Vector3.one * (lob ? 0.55f : 0.28f);
+            mesh.transform.localScale = Vector3.one * (lob ? 0.75f : 0.42f);
             mesh.GetComponent<MeshRenderer>().sharedMaterial = Art.Soup(c);
             fx.shots.Add(new Shot { From = from, To = to, Flight = Mathf.Max(flight, 0.05f), Lob = lob, Color = c, Ball = ball });
         }
@@ -295,7 +319,7 @@ namespace Corba
                 {
                     if (s.Ball != null)
                     {
-                        Splash(s.To, s.Color, s.Lob ? 10 : 4);
+                        Impact(s.To, s.Color, s.Lob);
                         Destroy(s.Ball.gameObject);
                     }
                     shots.RemoveAt(i);
@@ -304,7 +328,10 @@ namespace Corba
                 Vector3 p = Vector3.Lerp(s.From, s.To, s.T);
                 if (s.Lob) p.y += Mathf.Sin(s.T * Mathf.PI) * 3.5f;
                 s.Ball.position = p;
-                if (Random.value < 0.5f) Emit("fx_blob", p, Vector3.zero, 2f, 0.25f, 0.18f, 0.02f, s.Color);
+                // A thick trail plus a bright core so every shot reads at a glance, even in a busy raid.
+                // Frame-rate independent (~70 blobs a second) so busy raids stay cheap on fast machines.
+                if (Random.value < dt * 70f) Emit("fx_blob", p + Random.insideUnitSphere * 0.08f, Vector3.zero, 2f, 0.35f, s.Lob ? 0.36f : 0.26f, 0.02f, s.Color);
+                if (Random.value < dt * 25f) Emit("fx_star", p, Vector3.zero, 0f, 0.22f, s.Lob ? 0.34f : 0.24f, 0.02f, Color.Lerp(s.Color, Color.white, 0.65f));
             }
 
             for (int i = clouds.Count - 1; i >= 0; i--)

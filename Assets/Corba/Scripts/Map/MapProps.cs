@@ -37,6 +37,166 @@ namespace Corba
         }
     }
 
+    /// <summary>
+    /// The Sofra's cauldron. Visual only: its soup level mirrors the Sofra's hunger, and every bite
+    /// a raider takes is shown as soup ladled out of it and flung down the road to the raider.
+    /// </summary>
+    public class SofraPot : MonoBehaviour
+    {
+        /// <summary>The Sofra pot is bigger than the kitchen and market cauldrons so it reads as the goal.</summary>
+        public const float Scale = 1.3f;
+        public const float FullHeight = 1.28f;
+        const float EmptyHeight = 0.42f;
+
+        public static SofraPot Instance { get; private set; }
+
+        Transform surface;
+        Color color;
+        Vector3 baseScale;
+        float shown = 1f, phase, wobble;
+
+        public Vector3 SurfacePosition => surface != null ? surface.position : transform.position + Vector3.up * 1.2f;
+
+        public void Init(Transform surface, Color color)
+        {
+            this.surface = surface;
+            this.color = color;
+            baseScale = surface.localScale;
+            phase = Random.value * 10f;
+            Instance = this;
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        float Target()
+        {
+            var d = MatchDirector.Instance;
+            if (d == null || !d.IsSpawned || GameData.SofraHunger <= 0f) return 1f;
+            return Mathf.Clamp01(d.Hunger.Value / GameData.SofraHunger);
+        }
+
+        void Update()
+        {
+            if (surface == null) return;
+            float dt = Time.deltaTime;
+            phase += dt;
+            float target = Target();
+            // Drains quickly when bitten, refills slowly (with sparkle) when a new half starts.
+            bool refilling = target > shown + 0.05f;
+            shown = refilling ? Mathf.MoveTowards(shown, target, dt * 0.6f) : Mathf.Lerp(shown, target, 1f - Mathf.Exp(-6f * dt));
+            if (refilling && Random.value < dt * 12f) FX.Sparkle(surface.position, GameData.Hex("FFE08A"));
+
+            wobble = Mathf.MoveTowards(wobble, 0f, dt * 1.6f);
+            bool empty = shown < 0.02f;
+            surface.gameObject.SetActive(!empty);
+            if (empty) return;
+
+            float h = Mathf.Lerp(EmptyHeight, FullHeight, shown);
+            surface.localPosition = new Vector3(0f, h + Mathf.Sin(phase * 2.3f) * 0.02f, 0f);
+            // The cauldron narrows toward the bottom, so a low surface is a smaller disc.
+            float width = Mathf.Lerp(0.72f, 1f, shown) * (1f + Mathf.Sin(phase * 3.1f) * 0.012f);
+            surface.localScale = new Vector3(baseScale.x * width, baseScale.y, baseScale.z * width);
+            float slosh = wobble * 14f;
+            surface.localRotation = Quaternion.Euler(Mathf.Sin(phase * 9f) * slosh + Mathf.Sin(phase * 1.7f) * 1.5f, phase * 8f, Mathf.Cos(phase * 7f) * slosh);
+
+            if (Random.value < dt * 6f)
+            {
+                var r = Random.insideUnitCircle * baseScale.x * 0.3f * width;
+                FX.Bubble(surface.position + new Vector3(r.x, 0.02f, r.y), Color.Lerp(color, Color.white, 0.25f));
+            }
+            if (Random.value < dt * 2.5f) FX.Steam(surface.position + new Vector3(Random.Range(-0.4f, 0.4f), 0.2f, Random.Range(-0.4f, 0.4f)));
+
+            // Running low: the pot rattles now and then so the danger reads from across the map.
+            bool low = shown < 0.3f;
+            if (low && Random.value < dt * 1.2f) Tween.Punch(transform, 0.08f, 0.25f);
+        }
+
+        /// <summary>A raider reached the feast: the pot shudders as it is bitten (the raider itself dives in, see <see cref="PotDiver"/>).</summary>
+        public void Bite(int amount)
+        {
+            if (surface == null) return;
+            wobble = Mathf.Max(wobble, 0.4f);
+            FX.Steam(surface.position + Vector3.up * 0.1f);
+        }
+
+        /// <summary>Something landed in the soup: big splash over the rim, the pot jolts and the surface sloshes.</summary>
+        public void Dunk(Color raiderColor, float size)
+        {
+            if (surface == null) return;
+            wobble = 1f;
+            Tween.Punch(transform, 0.25f, 0.4f);
+            Vector3 lip = surface.position + Vector3.up * 0.15f;
+            FX.Splash(lip, color, Mathf.RoundToInt(14 * size));
+            FX.Splash(lip, raiderColor, Mathf.RoundToInt(6 * size));
+            FX.Ring(lip, color, 1.6f * size);
+            for (int i = 0; i < 4; i++) FX.Steam(lip + Random.insideUnitSphere * 0.5f);
+            for (int i = 0; i < 5; i++)
+            {
+                var dir = Quaternion.Euler(0, Random.Range(0f, 360f), 0) * Vector3.forward;
+                FX.Spill(lip + dir * 0.9f * Scale, dir, color);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A raider's model, detached when the raider reaches the Sofra: it hops in an arc into the cauldron,
+    /// tumbling like a dropped ingredient, and is gone in a splash. Purely cosmetic.
+    /// </summary>
+    public class PotDiver : MonoBehaviour
+    {
+        Vector3 from, to;
+        Quaternion startRot;
+        float t, duration, peak, size;
+        Vector3 startScale;
+        Color soupColor;
+
+        public static void Launch(Transform visual, Color soupColor, float size)
+        {
+            var pot = SofraPot.Instance;
+            if (visual == null || pot == null) return;
+            Tween.KillAll(visual);  // stop hit punches / bobs so they do not fight the dive
+            visual.SetParent(null, true);
+            var d = visual.gameObject.AddComponent<PotDiver>();
+            d.from = visual.position;
+            d.to = pot.SurfacePosition + Random.insideUnitSphere * 0.3f;
+            d.to.y = pot.SurfacePosition.y - 0.1f;
+            d.peak = Mathf.Max(d.from.y, d.to.y) + 2.4f;
+            d.duration = Random.Range(0.5f, 0.65f);
+            d.startRot = visual.rotation;
+            d.startScale = visual.localScale;
+            d.soupColor = soupColor;
+            d.size = size;
+            FX.Dust(d.from);
+        }
+
+        void Update()
+        {
+            t += Time.deltaTime / duration;
+            if (t >= 1f)
+            {
+                SofraPot.Instance?.Dunk(soupColor, Mathf.Clamp(size, 0.7f, 1.6f));
+                Destroy(gameObject);
+                return;
+            }
+            // Parabola through the peak, ending in the soup.
+            Vector3 p = Vector3.Lerp(from, to, t);
+            float arc = 4f * t * (1f - t);
+            p.y = Mathf.Lerp(from.y, to.y, t) + arc * (peak - Mathf.Lerp(from.y, to.y, 0.5f));
+            transform.position = p;
+            Vector3 flat = to - from;
+            flat.y = 0f;
+            var face = flat.sqrMagnitude > 0.01f ? Quaternion.LookRotation(flat) : startRot;
+            // Forward somersault into the pot.
+            transform.rotation = face * Quaternion.Euler(t * 360f, 0f, 0f);
+            // Squash at take-off, then shrink as it sinks in at the very end.
+            float s = t < 0.15f ? Mathf.Lerp(0.85f, 1.1f, t / 0.15f) : t > 0.8f ? Mathf.Lerp(1f, 0.35f, (t - 0.8f) / 0.2f) : 1f;
+            transform.localScale = startScale * s;
+        }
+    }
+
     public class PadMarker : MonoBehaviour
     {
         BuildPad pad;

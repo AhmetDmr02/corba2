@@ -85,6 +85,9 @@ namespace Corba
             t.resizeTextForBestFit = true;
             t.resizeTextMinSize = Mathf.Max(10, size / 2);
             t.resizeTextMaxSize = size;
+            // The title font has a very tall line box, so Unity draws its glyphs low; re-centre them.
+            // Added before Outline/Shadow so those effects copy the already-centred glyphs.
+            if (title && IsMiddle(align)) rt.gameObject.AddComponent<CenterGlyphs>();
             if (outline)
             {
                 var o = rt.gameObject.AddComponent<Outline>();
@@ -96,6 +99,8 @@ namespace Corba
             }
             return t;
         }
+
+        static bool IsMiddle(TextAnchor a) => a == TextAnchor.MiddleLeft || a == TextAnchor.MiddleCenter || a == TextAnchor.MiddleRight;
 
         public static Button Button(Transform parent, string label, Vector2 anchor, Vector2 pos, Vector2 size, UnityEngine.Events.UnityAction onClick, int fontSize = 32, Color? tint = null)
         {
@@ -172,6 +177,36 @@ namespace Corba
         public void OnPointerUp(PointerEventData e)
         {
             Tween.Scale(transform, rest * 1.07f, 0.4f, Ease.OutElastic).Realtime();
+        }
+    }
+
+    /// <summary>
+    /// Moves a text's glyphs so their visible bounds sit in the vertical middle of its rect. Fixes fonts whose
+    /// ascent/descent metrics are lopsided (e.g. Segoe Print), where Unity's own centring leaves the text low.
+    /// Works after best-fit, so it holds at any resolution.
+    /// </summary>
+    [RequireComponent(typeof(Text))]
+    public class CenterGlyphs : BaseMeshEffect
+    {
+        public override void ModifyMesh(VertexHelper vh)
+        {
+            if (!IsActive() || vh.currentVertCount == 0) return;
+            UIVertex v = default;
+            float minY = float.MaxValue, maxY = float.MinValue;
+            for (int i = 0; i < vh.currentVertCount; i++)
+            {
+                vh.PopulateUIVertex(ref v, i);
+                if (v.position.y < minY) minY = v.position.y;
+                if (v.position.y > maxY) maxY = v.position.y;
+            }
+            float dy = ((RectTransform)transform).rect.center.y - (minY + maxY) * 0.5f;
+            if (Mathf.Abs(dy) < 0.01f) return;
+            for (int i = 0; i < vh.currentVertCount; i++)
+            {
+                vh.PopulateUIVertex(ref v, i);
+                v.position.y += dy;
+                vh.SetUIVertex(v, i);
+            }
         }
     }
 }

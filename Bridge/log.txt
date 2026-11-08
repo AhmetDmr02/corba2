@@ -64,3 +64,34 @@
 20:31:14 PLAYMODE EnteredPlayMode
 20:31:20 PLAYMODE ExitingPlayMode
 20:31:21 PLAYMODE EnteredEditMode
+20:35:05 PLAYMODE ExitingEditMode
+20:35:11 PLAYMODE EnteredPlayMode
+20:35:48 PLAYMODE ExitingPlayMode
+20:35:48 PLAYMODE EnteredEditMode
+20:42:50 COMPILATION FINISHED
+20:43:04 PLAYMODE ExitingEditMode
+20:43:11 PLAYMODE EnteredPlayMode
+20:44:49 PLAYMODE ExitingPlayMode
+20:44:49 PLAYMODE EnteredEditMode
+20:47:20 COMPILATION FINISHED
+20:47:55 PLAYMODE ExitingEditMode
+20:48:01 PLAYMODE EnteredPlayMode
+20:49:49 PLAYMODE ExitingPlayMode
+20:49:49 PLAYMODE EnteredEditMode
+20:53:21 COMPILATION FINISHED
+20:53:34 PLAYMODE ExitingEditMode
+20:53:40 PLAYMODE EnteredPlayMode
+20:55:23 PLAYMODE ExitingPlayMode
+20:55:24 PLAYMODE EnteredEditMode
+20:58:42 COMPILATION FINISHED
+20:59:12 PLAYMODE ExitingEditMode
+20:59:18 PLAYMODE EnteredPlayMode
+21:01:06 PLAYMODE ExitingPlayMode
+21:01:07 PLAYMODE EnteredEditMode
+21:03:07 COMPILATION FINISHED
+21:03:18 PLAYMODE ExitingEditMode
+21:03:24 PLAYMODE EnteredPlayMode
+21:05:50 [Corba] half end: course 1 half 1 attacker 1 score 24 sofraFell False builds 5 raiders 20 ladles 8
+21:08:17 [Corba] half end: course 1 half 2 attacker 0 score 33 sofraFell False builds 9 raiders 15 ladles 0
+21:08:29 PLAYMODE ExitingPlayMode
+21:08:29 PLAYMODE EnteredEditMode

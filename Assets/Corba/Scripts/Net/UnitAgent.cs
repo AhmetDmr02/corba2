@@ -68,6 +68,14 @@ namespace Corba
                 FX.PopText(transform.position + Vector3.up * 2f, Loc.T("fx.poof"), GameData.Hex("FFF4DC"), 0.8f);
             }
             if (bar != null) Destroy(bar.gameObject);
+            bool atFeast = reachedEnd || (CorbaMap.Instance != null && Distance.Value >= CorbaMap.Instance.RoadLength - 0.5f);
+            if (atFeast && SofraPot.Instance != null && visual != null)
+            {
+                // Raiders are ingredients: the one that reaches the Sofra jumps into the cauldron.
+                PotDiver.Launch(visual, GameData.Soup(Info.Soup).Liquid, Info.Scale);
+                visual = null;
+                return;
+            }
             Art.SetFlash(renderers, 0.9f, HitColor);
             Art.Vanish(visual, 0.25f);
         }
@@ -124,11 +132,21 @@ namespace Corba
             for (int i = 0; i < 4; i++) FX.Sparkle(transform.position + Vector3.up * (0.6f + i * 0.3f), c);
         }
 
+        /// <summary>
+        /// Raiders are drawn stopping this far before the end of the road, at the rim of the Sofra cauldron,
+        /// and dive in from there when the bite lands (see <see cref="PotDiver"/>). Visual only: the sim still
+        /// walks them to the end, so bite timing is unchanged.
+        /// </summary>
+        const float FeastStop = 3f;
+
         void ClientVisual(float dt)
         {
             var map = CorbaMap.Instance;
-            Vector3 target = map.SampleRoad(Distance.Value, Lateral.Value);
-            map.SampleRoad(Distance.Value, out var tan);
+            float stop = map.RoadLength - FeastStop;
+            bool waitingToDive = Distance.Value > stop && SofraPot.Instance != null;
+            float shown = waitingToDive ? stop : Distance.Value;
+            Vector3 target = map.SampleRoad(shown, Lateral.Value);
+            map.SampleRoad(shown, out var tan);
             bool flying = Kind.Value == UnitId.Cloud;
             transform.position = Vector3.Lerp(transform.position, target, 1f - Mathf.Exp(-12f * dt));
             var f = Flags.Value;
@@ -138,7 +156,7 @@ namespace Corba
             bool attacking = (f & UnitStatus.Attacking) != 0;
             bool rooted = (f & UnitStatus.Rooted) != 0;
             float speedMult = (f & UnitStatus.Slowed) != 0 ? 0.55f : (f & UnitStatus.Hasted) != 0 ? 1.45f : 1f;
-            animator.SetBase(rooted && !attacking ? "Idle" : "Walk", Info.Speed / 3.6f * speedMult);
+            animator.SetBase((rooted || waitingToDive) && !attacking ? "Idle" : "Walk", Info.Speed / 3.6f * speedMult);
             if (attacking)
             {
                 attackAnimTimer -= dt;
@@ -155,7 +173,7 @@ namespace Corba
             }
             else if (!animator.HasRig)
             {
-                bobPhase += dt * Info.Speed * 3.2f * (rooted ? 0f : 1f);
+                bobPhase += dt * Info.Speed * 3.2f * (rooted || waitingToDive ? 0f : 1f);
                 visual.localPosition = new Vector3(0, Mathf.Abs(Mathf.Sin(bobPhase)) * 0.14f, 0);
             }
 
@@ -181,7 +199,7 @@ namespace Corba
                 damageTimer = 0.35f;
             }
             dustTimer -= dt;
-            if (dustTimer <= 0f && !flying && (f & UnitStatus.Rooted) == 0)
+            if (dustTimer <= 0f && !flying && !waitingToDive && (f & UnitStatus.Rooted) == 0)
             {
                 dustTimer = Random.Range(0.35f, 0.7f);
                 FX.Dust(transform.position);

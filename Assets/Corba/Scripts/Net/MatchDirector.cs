@@ -687,7 +687,7 @@ namespace Corba
         void ShotFxRpc(ulong buildObject, Vector3 from, Vector3 to, Color color, float flight, bool lob)
         {
             FX.Projectile(from, to, color, flight, lob);
-            FX.Puff(from, new Color(1f, 0.95f, 0.85f, 0.7f));
+            FX.Muzzle(from, color, lob);
             if (NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(buildObject, out var obj) && obj.TryGetComponent<DefenceBuild>(out var b)) b.Recoil();
         }
 
@@ -725,11 +725,18 @@ namespace Corba
         [Rpc(SendTo.ClientsAndHost)]
         void BiteFxRpc(Vector3 pos, int amount)
         {
-            FX.PopText(pos + Vector3.up * 1.6f, Loc.T("fx.nom"), GameData.Hex("FFD86A"), 1.6f);
             CameraRig.Instance?.Shake(0.35f);
             var map = CorbaMap.Instance;
             if (map != null && map.SofraObject != null) Tween.Squash(map.SofraObject, 0.2f, 0.4f);
-            FX.Splash(pos, GameData.Hex("E8962E"), 6);
+            var pot = SofraPot.Instance;
+            if (pot != null && map != null)
+            {
+                // The raider itself dives into the pot (UnitAgent -> PotDiver); here the pot just shudders.
+                pot.Bite(amount);
+                pos = pot.SurfacePosition;
+            }
+            else FX.Splash(pos, GameData.Hex("E8962E"), 6);
+            FX.PopText(pos + Vector3.up * 1.6f, Loc.T("fx.nom"), GameData.Hex("FFD86A"), 1.6f);
             FX.FloatText(pos + Vector3.up, "-" + amount, GameData.Hex("D9442B"));
         }
 

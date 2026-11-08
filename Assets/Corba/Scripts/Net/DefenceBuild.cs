@@ -79,7 +79,7 @@ namespace Corba
             shownLevel = Level.Value;
         }
 
-        public void Recoil() => Tween.Squash(visual, 0.12f, 0.25f);
+        public void Recoil() => Tween.Squash(visual, 0.22f, 0.3f);
 
         void SyncTimer(float simNow, bool disabled)
         {
