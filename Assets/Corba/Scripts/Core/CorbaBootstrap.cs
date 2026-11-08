@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -13,6 +15,10 @@ namespace Corba
         public const ushort Port = 7777;
         public static CorbaBootstrap Instance { get; private set; }
         public static GameMode PendingMode { get; private set; }
+
+        /// <summary>The Relay room code while hosting or joined through Unity services; null for direct IP and offline modes.</summary>
+        public static string RoomCode { get; private set; }
+        public static bool Busy { get; private set; }
 
         NetworkManager network;
         UnityTransport transport;
@@ -36,7 +42,9 @@ namespace Corba
             SetupEventSystem();
             new GameObject("UI").AddComponent<CorbaUI>();
 
-            CorbaMap.Instance.Build(Random.Range(1, int.MaxValue));
+            CorbaMap.Instance.Build(UnityEngine.Random.Range(1, int.MaxValue));
+            // Sign in early in the background so "Host Online" and "Join" answer faster; failures are reported when used.
+            _ = CorbaRelay.EnsureSignedIn().ContinueWith(t => { if (t.IsFaulted) Debug.LogWarning("[Corba] Unity Services sign-in failed: " + t.Exception?.GetBaseException().Message); });
         }
 
         void SetupCamera()
@@ -100,7 +108,11 @@ namespace Corba
                 response.CreatePlayerObject = false;
                 if (!response.Approved) response.Reason = Loc.T("net.full");
             };
-            network.OnClientStopped += _ => CorbaUI.Instance?.ShowMenu(Loc.T("menu.disconnected"));
+            network.OnClientStopped += _ =>
+            {
+                RoomCode = null;
+                CorbaUI.Instance?.ShowMenu(Loc.T("menu.disconnected"));
+            };
         }
 
         void SetupEventSystem()
@@ -111,25 +123,86 @@ namespace Corba
             go.AddComponent<InputSystemUIInputModule>();
         }
 
+        /// <summary>Offline modes (vs AI, practice, AI vs AI) and direct-IP LAN hosting.</summary>
         public bool Host(GameMode mode = GameMode.Online)
         {
             PendingMode = mode;
+            RoomCode = null;
             transport.SetConnectionData(mode == GameMode.Online ? "0.0.0.0" : "127.0.0.1", Port, mode == GameMode.Online ? "0.0.0.0" : "127.0.0.1");
+            return StartHostAndDirector();
+        }
+
+        bool StartHostAndDirector()
+        {
             if (!network.StartHost()) return false;
             var director = Instantiate(Resources.Load<GameObject>("Corba/Net/Director"));
             director.GetComponent<NetworkObject>().Spawn();
             return true;
         }
 
+        /// <summary>Direct-IP join, kept for LAN play.</summary>
         public bool Join(string address)
         {
+            RoomCode = null;
             transport.SetConnectionData(string.IsNullOrWhiteSpace(address) ? "127.0.0.1" : address.Trim(), Port);
             return network.StartClient();
+        }
+
+        /// <summary>Opens an online room through Unity Relay. Returns null on success, else a message for the menu.</summary>
+        public async Task<string> HostRoom()
+        {
+            if (Busy || network.IsListening) return null;
+            Busy = true;
+            try
+            {
+                var room = await CorbaRelay.CreateRoom();
+                if (this == null) return null;
+                PendingMode = GameMode.Online;
+                transport.SetRelayServerData(room.Data);
+                if (!StartHostAndDirector()) return Loc.T("net.relayFailed");
+                RoomCode = room.Code;
+                return null;
+            }
+            catch (Exception e)
+            {
+                return CorbaRelay.Describe(e, false);
+            }
+            finally
+            {
+                Busy = false;
+            }
+        }
+
+        /// <summary>Joins an online room by its code. Returns null on success, else a message for the menu.</summary>
+        public async Task<string> JoinRoom(string code)
+        {
+            if (Busy || network.IsListening) return null;
+            code = CorbaRelay.NormaliseCode(code);
+            if (code.Length == 0) return Loc.T("net.enterCode");
+            Busy = true;
+            try
+            {
+                var room = await CorbaRelay.JoinRoom(code);
+                if (this == null) return null;
+                transport.SetRelayServerData(room.Data);
+                if (!network.StartClient()) return Loc.T("menu.errClient");
+                RoomCode = room.Code;
+                return null;
+            }
+            catch (Exception e)
+            {
+                return CorbaRelay.Describe(e, true);
+            }
+            finally
+            {
+                Busy = false;
+            }
         }
 
         public void Leave()
         {
             if (network.IsListening) network.Shutdown();
+            RoomCode = null;
             CameraRig.Instance?.Follow(null);
         }
 

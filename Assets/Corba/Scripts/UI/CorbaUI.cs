@@ -19,7 +19,9 @@ namespace Corba
 
         RectTransform menuRoot, lobbyRoot, hudRoot, resultRoot, helpRoot;
         InputField ipField;
-        Text menuStatus, lobbyText, lobbyHint;
+        Text menuStatus, lobbyText, lobbyHint, roomCodeText;
+        RectTransform roomCodeRow;
+        float copiedUntil;
         Button startButton, soloButton;
         bool menuShown, hudShown, resultShown;
 
@@ -114,19 +116,21 @@ namespace Corba
             buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(0, -140), new Vector2(460, 92), OnVsAi, 40, GameData.Hex("FFD9A0")).Bind("menu.playAi").GetComponent<RectTransform>());
             buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(-118, -244), new Vector2(226, 76), OnHost, 26).Bind("menu.host").GetComponent<RectTransform>());
 
-            var ipRt = Rect("IP", panel, new Vector2(0.5f, 1f), new Vector2(118, -228), new Vector2(226, 44));
+            var ipRt = Rect("IP", panel, new Vector2(0.5f, 1f), new Vector2(118, -220), new Vector2(226, 62));
             var ipImg = Image(ipRt, "ui_field", Color.white, true);
             ipField = ipRt.gameObject.AddComponent<InputField>();
             ipField.targetGraphic = ipImg;
-            var ipText = Text(ipRt, "", 22, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(200, 36), false, false);
+            var ipText = Text(ipRt, "", 28, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(206, 50), false, false);
             ipText.supportRichText = false;
             ipText.resizeTextForBestFit = false;
-            var ph = Text(ipRt, "127.0.0.1", 22, new Color(Ink.r, Ink.g, Ink.b, 0.45f), TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(200, 36), false, false);
+            var ph = Text(ipRt, "", 24, new Color(Ink.r, Ink.g, Ink.b, 0.55f), TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(206, 50), false, false);
+            ph.Bind("menu.codePlaceholder");
             ipField.textComponent = ipText;
             ipField.placeholder = ph;
-            ipField.text = "127.0.0.1";
+            ipField.characterLimit = 21;
+            ipField.text = "";
             buttons.Add(ipRt);
-            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -282), new Vector2(226, 56), OnJoin, 24).Bind("menu.join").GetComponent<RectTransform>());
+            buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -284), new Vector2(226, 52), OnJoin, 24).Bind("menu.join").GetComponent<RectTransform>());
 
             buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(-118, -350), new Vector2(226, 70), OnSolo, 26).Bind("menu.practice").GetComponent<RectTransform>());
             buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -350), new Vector2(226, 70), OnAiVsAi, 22).Bind("menu.watch").GetComponent<RectTransform>());
@@ -134,7 +138,7 @@ namespace Corba
             buttons.Add(Button(panel, "", new Vector2(0.5f, 1f), new Vector2(118, -440), new Vector2(226, 70), Application.Quit, 24).Bind("menu.quit").GetComponent<RectTransform>());
             menuStatus = Text(panel, "", 22, GameData.Hex("9C2F1C"), TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0, 50), new Vector2(560, 40), false, false);
 
-            Text(menuRoot, "", 18, Cream, TextAnchor.LowerRight, new Vector2(1, 0), new Vector2(-190, 26), new Vector2(360, 30)).Bind(() => Loc.F("menu.netInfo", CorbaBootstrap.Port));
+            Text(menuRoot, "", 18, Cream, TextAnchor.LowerRight, new Vector2(1, 0), new Vector2(-190, 26), new Vector2(360, 30)).Bind("menu.netInfo");
             var lang = Button(menuRoot, "", new Vector2(1f, 1f), new Vector2(-180, -62), new Vector2(300, 66), Loc.Cycle, 24, GameData.Hex("C9E3F2")).Bind("lang.button");
 
             menuIntro = () =>
@@ -151,10 +155,19 @@ namespace Corba
         void BuildLobby()
         {
             lobbyRoot = Stretch("Lobby", Root);
-            var panel = Panel(lobbyRoot, "ui_panel", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 440)).rectTransform;
+            var panel = Panel(lobbyRoot, "ui_panel", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 540)).rectTransform;
             Text(panel, "", 54, Gold, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -74), new Vector2(600, 80), true).Bind("lobby.title");
             lobbyText = Text(panel, "", 30, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -150), new Vector2(600, 44), false, false);
             lobbyHint = Text(panel, "", 22, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 1f), new Vector2(0, -196), new Vector2(600, 40), false, false);
+
+            // Room code row: shown while the room runs through Unity Relay.
+            roomCodeRow = Rect("RoomCode", panel, new Vector2(0.5f, 1f), new Vector2(0, -268), new Vector2(560, 76));
+            Image(roomCodeRow, "ui_field", Color.white);
+            Text(roomCodeRow, "", 20, Ink, TextAnchor.MiddleLeft, new Vector2(0f, 0.5f), new Vector2(92, 0), new Vector2(150, 40), false, false).Bind("lobby.roomCode");
+            // The title font sits low in its line box, so the code is nudged up to look centred in the row.
+            roomCodeText = Text(roomCodeRow, "", 40, Ink, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(10, 9), new Vector2(240, 70), true, false);
+            Button(roomCodeRow, "", new Vector2(1f, 0.5f), new Vector2(-78, 0), new Vector2(140, 56), CopyRoomCode, 22).Bind("lobby.copy");
+
             startButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(0, 180), new Vector2(440, 80), () => MatchDirector.Instance?.StartMatchRpc(false), 30).Bind("lobby.start");
             soloButton = Button(panel, "", new Vector2(0.5f, 0f), new Vector2(-115, 80), new Vector2(220, 68), () => MatchDirector.Instance?.StartMatchRpc(true), 24).Bind("lobby.solo");
             Button(panel, "", new Vector2(0.5f, 0f), new Vector2(115, 80), new Vector2(220, 68), OnLeave, 24).Bind("lobby.leave");
@@ -341,9 +354,12 @@ namespace Corba
 
         #region Actions
 
-        void OnHost()
+        async void OnHost()
         {
-            if (!CorbaBootstrap.Instance.Host(GameMode.Online)) ShowMenu(Loc.T("menu.errHost"));
+            if (CorbaBootstrap.Busy) return;
+            menuStatus.text = Loc.T("menu.creatingRoom");
+            string error = await CorbaBootstrap.Instance.HostRoom();
+            if (error != null) ShowMenu(error);
         }
 
         void OnVsAi()
@@ -361,10 +377,28 @@ namespace Corba
             if (!CorbaBootstrap.Instance.Host(GameMode.Solo)) ShowMenu(Loc.T("menu.errStart"));
         }
 
-        void OnJoin()
+        async void OnJoin()
         {
-            if (!CorbaBootstrap.Instance.Join(ipField.text)) ShowMenu(Loc.T("menu.errClient"));
+            if (CorbaBootstrap.Busy || CorbaBootstrap.Online) return;
+            string text = ipField.text;
+            if (CorbaRelay.LooksLikeAddress(text))
+            {
+                // LAN fallback: an IP address (or an empty field for localhost) connects directly on the port.
+                if (!CorbaBootstrap.Instance.Join(text)) ShowMenu(Loc.T("menu.errClient"));
+                else menuStatus.text = Loc.T("menu.knocking");
+                return;
+            }
+            menuStatus.text = Loc.T("menu.findingRoom");
+            string error = await CorbaBootstrap.Instance.JoinRoom(text);
+            if (error != null) ShowMenu(error);
             else menuStatus.text = Loc.T("menu.knocking");
+        }
+
+        void CopyRoomCode()
+        {
+            if (string.IsNullOrEmpty(CorbaBootstrap.RoomCode)) return;
+            GUIUtility.systemCopyBuffer = CorbaBootstrap.RoomCode;
+            copiedUntil = Time.time + 1.5f;
         }
 
         void OnLeave()
@@ -512,9 +546,14 @@ namespace Corba
         {
             lobbyText.text = Loc.F("lobby.cooks", d.PlayerCount.Value);
             bool host = CorbaBootstrap.IsHost;
+            string code = CorbaBootstrap.RoomCode;
+            bool hasCode = !string.IsNullOrEmpty(code);
+            roomCodeRow.gameObject.SetActive(hasCode);
+            if (hasCode) roomCodeText.text = code;
             lobbyHint.text = host
-                ? (d.PlayerCount.Value < 2 ? Loc.F("lobby.waitRival", CorbaBootstrap.Port) : Loc.T("lobby.rivalHere"))
+                ? (d.PlayerCount.Value < 2 ? (hasCode ? Loc.T("lobby.shareCode") : Loc.F("lobby.waitRival", CorbaBootstrap.Port)) : Loc.T("lobby.rivalHere"))
                 : Loc.T("lobby.waitHost");
+            if (Time.time < copiedUntil) lobbyHint.text = Loc.T("lobby.copied");
             startButton.gameObject.SetActive(host);
             soloButton.gameObject.SetActive(host);
             startButton.interactable = d.PlayerCount.Value >= 2;
